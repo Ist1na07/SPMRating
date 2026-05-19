@@ -9,7 +9,7 @@ SPM Rating — 单文件谱面 SR 计算器（Sigmoid 聚合）
 
 特性:
   - Enhanced 模式 (Cross/Release/Shield/Inverse 全开启)
-  - Sigmoid 玩家准度聚合 (k=1.56, C=4.0, γ=0.20)
+  - Sigmoid 玩家准度聚合 (k=2.09, C=3.97, γ=0.196)
   - 自动加载 tuned_params_sigmoid.json 最优参数
   - 无需预计算缓存 (precompute 即时完成)
 

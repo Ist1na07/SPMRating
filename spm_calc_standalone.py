@@ -11,8 +11,8 @@ SPM Rating — 独立 SR 计算器 (Sigmoid 玩家准度聚合)
 
 模型:
   - Enhanced 模式 (Cross/Release/Shield/Inverse 全量分量)
-  - Sigmoid 准确度聚合 (k=1.56, C=4.0, γ=0.20)
-  - 205 张 playtest 谱面调优, MAE=0.2253
+  - Sigmoid 准确度聚合 (k=2.09, C=3.97, γ=0.196)
+  - 213 张 playtest 谱面调优, MAE=0.2180
 
 构建时间: """ + __import__("datetime").datetime.now().strftime("%Y-%m-%d") + """
 """
@@ -41,7 +41,7 @@ except ImportError:
 
 
 # ============================================================================
-# Tuned Parameters (from tuned_params_sigmoid.json, MAE=0.2253)
+# Tuned Parameters (from tuned_params_sigmoid.json, MAE=0.2180)
 # ============================================================================
 
 TUNED_PARAMS = {
@@ -54,59 +54,62 @@ TUNED_PARAMS = {
         "use_comprehensiveness": 0,
         "D_gamma_e": 0.0,
         "w_mean": 0.572,
-        "rescale_threshold": 9.54,
-        "rescale_divisor": 2.0,
-        "jack_aggregation_power": 3.98,
-        "multi_jack_boost": 0.003,
-        "Abar_scale": 1.0159974528704387,
+        "rescale_threshold": 9.417420338567627,
+        "rescale_divisor": 2.009376904206021,
+        "jack_aggregation_power": 4.271216932836177,
+        "multi_jack_boost": 0.00042685730273835614,
+        "Abar_scale": 1.0163,
         "inverse_peak_width": 2.0,
         "shield_anchor_mod": 0.8062210781592527,
         "shield_coord_factor": 1.0025438218559561,
         "stream_booster_scale": 1.75e-07,
         "cross_dist_exponent": 1.0,
         "cross_same_hand_penalty": 0.3,
-        "cross_thumb_bridge_factor": 0.5768675268883898,
-        "release_tail_coeff": 0.1301386626710443,
-        "release_tail_to_tap": 2.8102788921489603,
-        "release_same_col_bonus": 0.2510782776793202,
-        "release_coord_exponent": 0.6855610516647912,
-        "S_w1": 0.5127205484014595,
-        "S_p": 1.1350727423836298,
-        "alpha_P": 0.7243971981192697,
-        "alpha_R": 28.68398732935888,
-        "alpha_C": 9.597140096247783,
-        "alpha_S": 0.5017118508840599,
-        "alpha_V": 0.4348924525605874,
-        "D_beta1": 1.1645638403719478,
-        "D_beta2": 0.3889790083690824,
+        "cross_thumb_bridge_factor": 0.5535622364790934,
+        "release_tail_coeff": 0.14488009478034738,
+        "release_tail_to_tap": 4.224154738413993,
+        "release_same_col_bonus": 0.267745272040277,
+        "release_coord_exponent": 0.7193118045950513,
+        "S_w1": 0.484,
+        "S_p": 0.9994,
+        "alpha_P": 0.7245387129819947,
+        "alpha_R": 32.2385,
+        "alpha_C": 11.02053,
+        "alpha_S": 0.5554,
+        "alpha_V": 0.37139999999999995,
+        "D_beta1": 1.1879,
+        "D_beta2": 0.3845,
         "w_93": 0.1820607086443739,
         "w_83": 0.2338096935124762,
         "coeff_93": 0.9642799087643721,
         "coeff_83": 0.6025543835022324,
         "mean_power": 2.137380905141331,
-        "note_norm_N0": 10.0,
-        "global_scale": 1.0548667350346,
-        "inv_amplitude": 3.448859525864742,
-        "inv_tau": 32.502710313970894,
-        "inv_power": 0.8537687907693771,
-        "guide_depth": 0.7971215272422785,
-        "guide_center": 78.53359863949761,
-        "guide_width": 41.581395044572375,
-        "cross_guide_scale": 0.5894104667719972,
-        "inverse_same_col_bonus": 2.6084806897704493,
-        "shield_tau_ms": 56.24289518646123,
-        "release_seq_coeff": 0.07876946297853933,
-        "lock_interaction_coeff": 0.13816209949139724,
-        "cross_dist_exponent_rc": 0.9732421726222308,
-        "cross_dist_exponent_ln": 0.974803204070658,
-        "cross_same_hand_penalty_rc": 0.3613101110984365,
-        "cross_same_hand_penalty_ln": 0.30422710249481105,
+        "note_norm_N0": 8.208876816969216,
+        "global_scale": 1.0549342571808757,
+        "inv_amplitude": 3.7118766294981045,
+        "inv_tau": 31.906673905517522,
+        "inv_power": 0.797883494531484,
+        "guide_depth": 0.8539658929253457,
+        "guide_center": 83.00337573436185,
+        "guide_width": 33.569919335556584,
+        "cross_guide_scale": 0.6632104629775328,
+        "inverse_same_col_bonus": 2.6796650792734167,
+        "shield_tau_ms": 56.2429,
+        "release_seq_coeff": 0.10849823285734937,
+        "lock_interaction_coeff": 0.11648699038253439,
+        "cross_dist_exponent_rc": 0.997293421760749,
+        "cross_dist_exponent_ln": 0.9323875832719253,
+        "cross_same_hand_penalty_rc": 0.39298900398939857,
+        "cross_same_hand_penalty_ln": 0.2954279991821967,
         "use_sigmoid_aggregation": 1,
-        "agg_sigmoid_k": 1.5636,
-        "agg_sigmoid_C": 3.9862,
-        "agg_sigmoid_ref_gamma": 0.2011,
-        "calib_a": 0.8899,
-        "calib_b": 0.0436
+        "agg_sigmoid_k": 2.09,
+        "agg_sigmoid_C": 3.968852604627637,
+        "agg_sigmoid_ref_gamma": 0.1956208588626766,
+        "calib_a": 0.8933406436079341,
+        "calib_b": 0.03083150068086804,
+        "short_ln_threshold": 331.62375992488296,
+        "short_ln_reduction": 0.10008962172133994,
+        "V_alpha": 0.435
     }
 TUNED_PARAMS["use_sigmoid_aggregation"] = 1
 
@@ -3718,16 +3721,21 @@ def compute_sr_map(osu_path, params=None):
 
 
 def main():
+    # Ensure UTF-8 for Chinese output (needed for frozen exe)
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8')
+
     print("=" * 55)
     print("  SPM Rating — Sigmoid 聚合 SR 计算器")
     print("=" * 55)
     print(f"  k={TUNED_PARAMS['agg_sigmoid_k']:.2f}, C={TUNED_PARAMS['agg_sigmoid_C']:.2f}, "
           f"gamma={TUNED_PARAMS['agg_sigmoid_ref_gamma']:.3f}")
-    print(f"  训练 MAE={0.2253}, Pass@0.5={92.2}%")
+    print(f"  训练 MAE={0.2180}, Pass@0.5={89.4}%")
     print()
 
     args = sys.argv[1:]
-    target = args[0] if args else os.path.dirname(os.path.abspath(__file__))
+    default_dir = os.getcwd() if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
+    target = args[0] if args else default_dir
 
     # Collect .osu files
     if os.path.isfile(target) and target.endswith(".osu"):
@@ -3741,11 +3749,11 @@ def main():
         osu_files.sort()
     else:
         print(f"  无效目标: {target}")
-        sys.exit(1)
+        return
 
     if not osu_files:
         print(f"  未找到 .osu 文件")
-        sys.exit(1)
+        return
 
     if len(osu_files) == 1:
         fpath = osu_files[0]
@@ -3785,3 +3793,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+    try:
+        input("\n按 Enter 退出...")
+    except EOFError:
+        pass
