@@ -1,8 +1,8 @@
 """
-Build standalone spm_calc_v2.py from spm_rating/ source files.
+Build standalone spm_calc_standalone.py from spm_rating/ source files.
 
 Merges all module code into a single file, strips relative imports,
-inlines tuned parameters. Output is a self-contained .py file.
+inlines tuned parameters and correction layer. Output is a self-contained .py file.
 """
 import sys, os, re, json
 
@@ -81,11 +81,15 @@ for fname in CORE_FILES:
 
 
 # ============================================================
-# Load tuned params
+# Load tuned params and correction layer
 # ============================================================
 params_path = os.path.join(PROJECT_ROOT, "tuned_params_sigmoid.json")
 with open(params_path, encoding="utf-8") as f:
     tuned_data = json.load(f)
+
+correction_path = os.path.join(PROJECT_ROOT, "tuned_correction.json")
+with open(correction_path, encoding="utf-8") as f:
+    correction_data = json.load(f)
 
 def json_to_py(obj, indent=0):
     """Convert Python dict to Python literal (not JSON — uses True/False/None)."""
@@ -117,6 +121,8 @@ def json_to_py(obj, indent=0):
     return repr(obj)
 
 tuned_params_block = json_to_py(tuned_data["params"], indent=4)
+correction_weights_block = json_to_py(correction_data["correction_weights"], indent=4)
+postprocess_block = json_to_py(correction_data["postprocess"], indent=4)
 
 
 # ============================================================
@@ -179,19 +185,20 @@ imports_section = "\n".join(IMPORT_LINES)
 # ============================================================
 HEADER = '''#!/usr/bin/env python
 """
-SPM Rating — 独立 SR 计算器 (Sigmoid 玩家准度聚合)
+SPM Rating — 独立 SR 计算器 (Sigmoid 玩家准度聚合 + 特征修正层)
 
 单文件, 零外部依赖 (除 numpy)。放入任意目录即可使用。
 
 用法:
-  python spm_calc_v2.py                     # 扫描当前目录的 .osu
-  python spm_calc_v2.py "D:/maps/"          # 扫描指定目录
-  python spm_calc_v2.py chart.osu           # 计算单张谱面
+  python spm_calc_standalone.py                     # 扫描当前目录的 .osu
+  python spm_calc_standalone.py "D:/maps/"          # 扫描指定目录
+  python spm_calc_standalone.py chart.osu           # 计算单张谱面
 
 模型:
   - Enhanced 模式 (Cross/Release/Shield/Inverse 全量分量)
-  - Sigmoid 准确度聚合 (k=1.56, C=4.0, γ=0.20)
-  - 205 张 playtest 谱面调优, MAE=0.2253
+  - Sigmoid 准确度聚合 (k=2.09, C=3.97, γ=0.196)
+  - 特征修正层 (7 个谱面特征, L2 正则化, λ=0.01)
+  - 311 张 playtest 谱面调优, MAE=0.2180, CV Test Loss=0.862
 
 构建时间: """ + __import__("datetime").datetime.now().strftime("%Y-%m-%d") + """
 """
@@ -200,15 +207,114 @@ SPM Rating — 独立 SR 计算器 (Sigmoid 玩家准度聚合)
 
 TUNED_PARAMS_SECTION = f"""
 # ============================================================================
-# Tuned Parameters (from tuned_params_sigmoid.json, MAE=0.2253)
+# Tuned Parameters (from tuned_params_sigmoid.json, MAE=0.2180)
 # ============================================================================
 
 TUNED_PARAMS = {tuned_params_block}
 TUNED_PARAMS["use_sigmoid_aggregation"] = 1
 
+
+# ============================================================================
+# Correction Layer (7 features, L2 regularized, λ=0.01)
+# ============================================================================
+
+CORRECTION_WEIGHTS = {correction_weights_block}
+
+CORRECTION_POSTPROCESS = {postprocess_block}
+
+FEATURE_NAMES = ["speed", "burst", "chord", "pj", "hs", "lb", "fj"]
+
+FEATURE_PARAMS = {{
+    "spd_dt": 150, "spd_dc": 3,
+    "bst_dt": 100, "ch_order": 4,
+    "hs_dt": 200, "lb_dt": 150, "fj_dt": 100,
+}}
+
 """
 
 CLI_SECTION = '''
+# ============================================================================
+# Feature Computation (Correction Layer)
+# ============================================================================
+
+def compute_features(cache, params=None):
+    """Compute map-level features for the correction layer.
+
+    These features capture pattern densities that the base D(t) formula
+    systematically under- or over-estimates.
+    """
+    if params is None:
+        params = FEATURE_PARAMS
+
+    ns = cache["note_seq"]
+    times = np.array([n[1] for n in ns], dtype=np.float64)
+    cols = np.array([n[0] for n in ns], dtype=np.int32)
+    duration_s = max((times[-1] - times[0]) / 1000.0, 1.0)
+    features = {}
+    if len(ns) < 2:
+        return features
+
+    dt_ns = np.diff(times).astype(np.float64)
+    dc_ns = np.abs(np.diff(cols)).astype(np.float64)
+
+    # Speed: fast cross-hand notes per second
+    features["speed"] = float(
+        np.sum((dt_ns < params["spd_dt"]) & (dc_ns >= int(round(params["spd_dc"]))))
+    ) / duration_s
+
+    # Burst: triplet density per second
+    features["burst"] = float(
+        sum(1 for j in range(2, len(times)) if times[j] - times[j-2] < params["bst_dt"])
+    ) / duration_s
+
+    # Chord: fraction of notes that are part of chords (>=ch_order simultaneous)
+    ch_order = int(round(params["ch_order"]))
+    chord_count = 0
+    for j in range(len(ns)):
+        t = times[j]
+        cnt = 1
+        k = j - 1
+        while k >= 0 and abs(times[k] - t) < 2:
+            cnt += 1
+            k -= 1
+        if cnt >= ch_order:
+            chord_count += 1
+    features["chord"] = chord_count / max(len(ns), 1)
+
+    # PJ ratio: stream/jack balance
+    Jbar = cache["Jbar_base"]
+    Pbar = cache["Pbar_base"]
+    features["pj"] = (
+        float(np.mean(Pbar) / (np.mean(Jbar) + 1))
+        if len(Jbar) > 0 and len(Pbar) > 0
+        else 1.5
+    )
+
+    # Hand-switch: cross-hand transitions per second
+    hand_mask = (
+        ((cols[:-1] < 3) & (cols[1:] >= 4)) |
+        ((cols[:-1] >= 4) & (cols[1:] < 3))
+    )
+    features["hs"] = float(
+        np.sum(hand_mask & (dt_ns < params["hs_dt"]))
+    ) / duration_s
+
+    # Light burst: 4-note burst density
+    features["lb"] = float(
+        sum(1 for j in range(3, len(times)) if times[j] - times[j-3] < params["lb_dt"])
+    ) / duration_s
+
+    # Fast jack: same-column rapid notes per second
+    same_col = dc_ns == 0
+    features["fj"] = (
+        float(np.sum(dt_ns[same_col] < params["fj_dt"])) / duration_s
+        if np.any(same_col)
+        else 0.0
+    )
+
+    return features
+
+
 # ============================================================================
 # CLI Entry Point
 # ============================================================================
@@ -226,7 +332,7 @@ def _load_params():
 
 
 def compute_sr_map(osu_path, params=None):
-    """Compute Star Rating for a single .osu chart.
+    """Compute Star Rating for a single .osu chart with correction layer.
 
     Args:
         osu_path: path to .osu file
@@ -234,7 +340,7 @@ def compute_sr_map(osu_path, params=None):
 
     Returns:
         sr: float Star Rating value
-        details: dict with diagnostic info (D_all, D_solved, component values, etc.)
+        details: dict with diagnostic info (D_all, D_solved, correction, features, etc.)
     """
     if params is None:
         params = dict(TUNED_PARAMS)
@@ -244,18 +350,59 @@ def compute_sr_map(osu_path, params=None):
         p.update(params)
         params = p
     params["use_sigmoid_aggregation"] = 1
+
+    # Step 1-2: Standard SPM precompute + combine
     cache = precompute(osu_path, use_enhanced=True, params=params)
-    sr, details = combine(cache, params=params)
-    return sr, details
+    sr_base, details = combine(cache, params=params)
+    D_full = details["D_all"]
+    C_arr = details["C_arr"]
+
+    # Step 3: D calibration
+    cal_a = params.get("calib_a", 0.893)
+    cal_b = params.get("calib_b", 0.031)
+    D_calib = cal_a * D_full + cal_b
+
+    # Step 4: Compute features and correction
+    features = compute_features(cache)
+    correction = sum(
+        CORRECTION_WEIGHTS.get(fn, 0.0) * features.get(fn, 0.0)
+        for fn in FEATURE_NAMES
+    )
+
+    # Step 5: Apply correction
+    D_new = np.maximum(D_calib + correction, 0.01)
+
+    # Step 6: Aggregation with corrected postprocess params
+    total_notes = compute_total_notes(cache["note_seq"], cache["LN_seq"])
+    SR, agg_details = compute_SR_sigmoid(
+        cache["all_corners"], C_arr, D_new, total_notes, cache["LN_seq"],
+        sigmoid_k=params.get("agg_sigmoid_k", 2.09),
+        sigmoid_C=params.get("agg_sigmoid_C", 3.969),
+        sigmoid_gamma=params.get("agg_sigmoid_ref_gamma", 0.196),
+        note_norm_N0=CORRECTION_POSTPROCESS["N0"],
+        rescale_threshold=CORRECTION_POSTPROCESS["threshold"],
+        rescale_divisor=CORRECTION_POSTPROCESS["divisor"],
+        global_scale=CORRECTION_POSTPROCESS["scale"],
+    )
+
+    details.update({
+        "sr_base": sr_base,
+        "sr_corrected": SR,
+        "correction": correction,
+        "features": features,
+    })
+
+    return SR, details
 
 
 def main():
     print("=" * 55)
-    print("  SPM Rating — Sigmoid 聚合 SR 计算器")
+    print("  SPM Rating — Sigmoid 聚合 + 特征修正 SR 计算器")
     print("=" * 55)
     print(f"  k={TUNED_PARAMS['agg_sigmoid_k']:.2f}, C={TUNED_PARAMS['agg_sigmoid_C']:.2f}, "
           f"gamma={TUNED_PARAMS['agg_sigmoid_ref_gamma']:.3f}")
-    print(f"  训练 MAE={0.2253}, Pass@0.5={92.2}%")
+    print(f"  训练 MAE=0.2180, CV Test Loss=0.862")
+    print(f"  修正层: {len(FEATURE_NAMES)} 个特征")
     print()
 
     args = sys.argv[1:]
@@ -283,7 +430,9 @@ def main():
         fpath = osu_files[0]
         print(f"  计算: {os.path.basename(fpath)}")
         sr, d = compute_sr_map(fpath)
-        print(f"  SR = {sr:.4f}")
+        print(f"  SR (base):     {d.get('sr_base', 0):.4f}")
+        print(f"  SR (corrected): {sr:.4f}")
+        print(f"  Correction:     {d.get('correction', 0):+.4f}")
         print(f"  D_all 范围: [{d.get('D_min',0):.2f}, {d.get('D_max',0):.2f}]")
         print(f"  D_solved: {d.get('D_solved',0):.2f}")
         if 'n_raw' in d:
@@ -322,7 +471,7 @@ if __name__ == "__main__":
 # ============================================================
 # Assemble final file
 # ============================================================
-output_path = os.path.join(PROJECT_ROOT, "dist", "SPMRating_v2_final", "spm_calc_v2.py")
+output_path = os.path.join(PROJECT_ROOT, "spm_calc_standalone.py")
 
 with open(output_path, "w", encoding="utf-8") as out:
     out.write(HEADER)

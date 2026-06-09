@@ -4,9 +4,9 @@
 
 一个开源的 osu!mania **7K** 难度评级算法。
 
-**核心设计**：7 个独立的难度分量从多维度提取谱面结构特征——叠键密度 (Jack)、列间协调 (Cross)、连击密度 (Stream)、LN 释放交互 (Release)、锚点/卡手 (Anchor)、护盾保护 (Shield)、密度反转 (Inverse)。所有分量在统一的 Precompute/Combine 架构下按 ~500Hz 时间分辨率合成瞬时难度 D(t)，最后通过 Sigmoid 玩家准度模型聚合为与社区共识高度一致的星数评级。
+**核心设计**：7 个独立的难度分量从多维度提取谱面结构特征——叠键密度 (Jack)、列间协调 (Cross)、连击密度 (Stream)、LN 释放交互 (Release)、锚点/卡手 (Anchor)、护盾保护 (Shield)、密度反转 (Inverse)。所有分量在统一的 Precompute/Combine 架构下按 ~500Hz 时间分辨率合成瞬时难度 D(t)，通过 Sigmoid 玩家准度模型聚合，并叠加**特征修正层**（7 个谱面级特征，L2 正则化线性模型）捕捉 D 公式的系统性偏差，最终输出与社区共识高度一致的星数评级。
 
-基于 **311 张谱面**（148 Dan + 57 Tournament + 20 Graveyard + 86 Ranked），通过交替块式 Nelder-Mead 优化训练各分量权重与聚合参数。
+基于 **311 张谱面**（148 Dan + 57 Tournament + 20 Graveyard + 86 Ranked），通过交替块式 Nelder-Mead 优化训练各分量权重与聚合参数，特征修正层通过 L2 正则化线性回归独立训练。
 
 ## 快速开始
 
@@ -42,16 +42,19 @@ print(f"D_solved = {details['D_solved']:.2f}")
 
 | 指标 | 值 |
 |------|-----|
-| **MAE** | 0.2180 |
-| **Loss** | 0.9321 |
-| **相关性** | 0.9881 |
-| **Pass@0.5** | 89.4% |
+| **MAE** | 0.213 |
+| **In-sample Loss** | 0.770 |
+| **CV Test Loss** | 0.862 (5-fold) |
+| **相关性** | 0.989 |
+| **Pass@0.5** | 83.6% |
 
 按来源 (311 张):
 - Dan 段位 (148 张): MAE ~0.20
 - Tournament (57 张): MAE ~0.22
 - Graveyard (20 张): MAE ~0.38
 - Ranked (86 张): MAE ~0.25
+
+**特征修正层改善**: 在 Sigmoid 聚合基础上，修正层将 in-sample loss 从 0.932 降低到 0.770（-17.4%），通过 7 个谱面级特征捕捉 D 公式的系统性偏差。
 
 ## 算法架构
 
@@ -97,15 +100,40 @@ $$\sum \frac{w_i}{C + e^{k(D_i-D)}} = total\_W \cdot \gamma$$
 
 通过二分法求解 → D_solved 即为原始 SR。
 
-### 3. 后处理
+### 3. 特征修正层
+
+D 公式存在**系统性偏差**（如高估和弦密度、低估 fast jack 疲劳），修正层通过 7 个谱面级特征捕捉这些偏差：
 
 ```
-SR = D_solved × n_eff/(n_eff + N0)       # 物量归一化 (N0=8.21)
-if SR > 9.42: SR = 9.42 + (SR - 9.42)/2.01  # 高 SR 压缩
-SR *= 1.055                                # 全局缩放
+correction = Σ w_j × feature_j    (j ∈ {speed, burst, chord, pj, hs, lb, fj})
+D_new(t) = D_calib(t) + correction
 ```
 
-### 4. D 预校准
+| 特征 | 权重 | 物理意义 |
+|------|------|---------|
+| **chord** | -0.714 | 和弦密度（多列同时击打协同减负） |
+| **fj** | +0.265 | Fast jack（同列快打累积疲劳） |
+| hs | +0.043 | 手切（左右手切换协调） |
+| lb | +0.020 | 轻爆发（四音组） |
+| speed | -0.038 | 速度型模式 |
+| burst | -0.025 | 爆发型模式 |
+| pj | -0.005 | 流/jack 平衡 |
+
+修正层是**标量线性模型**（不随时间变化），利用 D_solved 位移不变性实现 ~1500× 加速。L2 正则化（λ=0.01）控制权重幅度，防止过拟合。
+
+完整方法论见 `docs/TUNING_CORRECTION_LAYER.md`。
+
+### 4. 后处理
+
+修正层联合重优化了后处理参数：
+
+```
+SR = D_solved × n_eff/(n_eff + N0)       # 物量归一化 (N0=0.0005)
+if SR > 9.40: SR = 9.40 + (SR - 9.40)/1.98  # 高 SR 压缩
+SR *= 1.061                                # 全局缩放
+```
+
+### 5. D 预校准
 
 D(t) 在送入 Sigmoid 前经过线性预校准：
 
@@ -113,7 +141,7 @@ $$D'(t) = 0.893 \cdot D(t) + 0.031$$
 
 补偿百分位聚合校准带来的偏差。
 
-### 5. 子模型
+### 6. 子模型
 
 - **RC 模型**: 禁用 Rbar/Sbar/Vbar（纯 Rice，LN 头当作单点）
 - **LN 模型**: 仅用 LN 段落掩码聚合（排除 RC 主导段干扰）
@@ -123,6 +151,7 @@ $$D'(t) = 0.893 \cdot D(t) + 0.031$$
 | 文件 | 内容 |
 |------|------|
 | `tuned_params_sigmoid.json` | Total SR 参数（Sigmoid 聚合, MAE=0.2180） |
+| `tuned_correction.json` | 特征修正层权重（7 特征 + 4 后处理，CV Test Loss=0.862） |
 | `tuned_params_rc.json` | RC 子模型参数 |
 | `tuned_params_ln.json` | LN 子模型参数 |
 
@@ -133,15 +162,18 @@ spm_rating/
 ├── README.md                        # 本文档
 ├── README_EN.md                     # English version
 ├── LICENSE                          # MIT
-├── spm_calc_standalone.py           # ★ 独立单文件 SR 计算器 (推荐)
-├── spm_calc.py                      # 模块版计算器
+├── spm_calc_standalone.py           # ★ 独立单文件 SR 计算器 (推荐，含修正层)
+├── spm_calc.py                      # 模块版计算器（含修正层）
 ├── tune_terminal.py                 # 交互式调参终端
 ├── tuned_params_sigmoid.json        # 最优 Sigmoid 参数
+├── tuned_correction.json            # ★ 特征修正层权重 (7 特征 + 4 后处理)
 ├── tuned_params_rc.json             # RC 子模型参数
 ├── tuned_params_ln.json             # LN 子模型参数
 ├── docs/
-│   ├── TUNING_METHODOLOGY.md       # 调参方法论
-│   └── TUNING_METHODOLOGY_EN.md    # English version
+│   ├── TUNING_CORRECTION_LAYER.md   # ★ 修正层调参方法论
+│   ├── TUNING_CORRECTION_LAYER_EN.md# English version
+│   ├── TUNING_METHODOLOGY.md        # Sigmoid 层调参方法论
+│   └── TUNING_METHODOLOGY_EN.md     # English version
 ├── spm_rating/                      # 核心算法
 │   ├── rating.py                    # precompute() + combine() 入口
 │   ├── aggregate_sigmoid.py         # Sigmoid 聚合（二分求解）
@@ -225,6 +257,8 @@ for entry in entries:
 
 ## 调参方法
 
+### Sigmoid 层：交替块式 Nelder-Mead
+
 参数通过**交替块式 Nelder-Mead** 优化（6 块 × 2 轮，50→25 次迭代）:
 
 | 块 | 参数 | 模式 | 贡献 |
@@ -236,11 +270,28 @@ for entry in entries:
 | B3c | Inverse 特征层参数 (含 same_col_bonus) | Full | 改善极小 |
 | B3d | Jack 聚合参数 | Full | 改善极小 |
 
-核心发现: **k=2.09 最优**（最大单一改善）。
+核心发现: **k=2.09 最优**（最大单一改善）。完整方法见 `docs/TUNING_METHODOLOGY.md`。
 
-完整方法见 `docs/TUNING_METHODOLOGY.md`。
+### 修正层：L2 正则化线性回归
+
+修正层在 Sigmoid 层之上独立训练（11 参数，不分块）：
+
+- **优化器**: Nelder-Mead (maxiter=10000, xatol=1e-7, fatol=1e-7, adaptive=True)
+- **正则化**: L2 (λ=0.01)，控制权重幅度
+- **交叉验证**: 5-fold CV (seed=42)，CV Test Loss=0.862
+- **关键技巧**: 利用 D_solved 位移不变性加速 ~1500×
+
+完整方法见 `docs/TUNING_CORRECTION_LAYER.md`。
 
 ## 版本历史
+
+### v0.3.0 (当前)
+- **新增特征修正层**：7 个谱面级特征（speed, burst, chord, pj, hs, lb, fj），L2 正则化线性模型
+- In-sample Loss: 0.932 → **0.770**（-17.4%）
+- CV Test Loss: **0.862**（5-fold, gap=0.092）
+- MAE: 0.218 → **0.213**，相关性: 0.988 → **0.989**
+- 后处理参数与修正层联合重优化
+- 完整调参方法论：`docs/TUNING_CORRECTION_LAYER.md`
 
 ### v0.2.0
 - 数据集从 213 扩展到 **311 张**（新增 86 Ranked + 12 Tournament）

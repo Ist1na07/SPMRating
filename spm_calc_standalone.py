@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-SPM Rating — 独立 SR 计算器 (Sigmoid 玩家准度聚合)
+SPM Rating — 独立 SR 计算器 (Sigmoid 玩家准度聚合 + 特征修正层)
 
 单文件, 零外部依赖 (除 numpy)。放入任意目录即可使用。
 
@@ -12,7 +12,8 @@ SPM Rating — 独立 SR 计算器 (Sigmoid 玩家准度聚合)
 模型:
   - Enhanced 模式 (Cross/Release/Shield/Inverse 全量分量)
   - Sigmoid 准确度聚合 (k=2.09, C=3.97, γ=0.196)
-  - 213 张 playtest 谱面调优, MAE=0.2180
+  - 特征修正层 (7 个谱面特征, L2 正则化, λ=0.01)
+  - 311 张 playtest 谱面调优, MAE=0.2180, CV Test Loss=0.862
 
 构建时间: """ + __import__("datetime").datetime.now().strftime("%Y-%m-%d") + """
 """
@@ -112,6 +113,36 @@ TUNED_PARAMS = {
         "V_alpha": 0.435
     }
 TUNED_PARAMS["use_sigmoid_aggregation"] = 1
+
+
+# ============================================================================
+# Correction Layer (7 features, L2 regularized, λ=0.01)
+# ============================================================================
+
+CORRECTION_WEIGHTS = {
+        "speed": -0.0380996735738698,
+        "burst": -0.025148794588902998,
+        "chord": -0.71420012109205,
+        "pj": -0.0050070390858298125,
+        "hs": 0.04346521445328749,
+        "lb": 0.020229065240061,
+        "fj": 0.26523765756302176
+    }
+
+CORRECTION_POSTPROCESS = {
+        "N0": 0.00048019189651536405,
+        "threshold": 9.398828546361862,
+        "divisor": 1.9841881487426187,
+        "scale": 1.0614719389587273
+    }
+
+FEATURE_NAMES = ["speed", "burst", "chord", "pj", "hs", "lb", "fj"]
+
+FEATURE_PARAMS = {
+    "spd_dt": 150, "spd_dc": 3,
+    "bst_dt": 100, "ch_order": 4,
+    "hs_dt": 200, "lb_dt": 150, "fj_dt": 100,
+}
 
 
 
@@ -3681,6 +3712,88 @@ def calculate(file_path, mod="", use_enhanced=False, params=None):
     return combine(c, params)
 
 # ============================================================================
+# Feature Computation (Correction Layer)
+# ============================================================================
+
+def compute_features(cache, params=None):
+    """Compute map-level features for the correction layer.
+
+    These features capture pattern densities that the base D(t) formula
+    systematically under- or over-estimates.
+    """
+    if params is None:
+        params = FEATURE_PARAMS
+
+    ns = cache["note_seq"]
+    times = np.array([n[1] for n in ns], dtype=np.float64)
+    cols = np.array([n[0] for n in ns], dtype=np.int32)
+    duration_s = max((times[-1] - times[0]) / 1000.0, 1.0)
+    features = {}
+    if len(ns) < 2:
+        return features
+
+    dt_ns = np.diff(times).astype(np.float64)
+    dc_ns = np.abs(np.diff(cols)).astype(np.float64)
+
+    # Speed: fast cross-hand notes per second
+    features["speed"] = float(
+        np.sum((dt_ns < params["spd_dt"]) & (dc_ns >= int(round(params["spd_dc"]))))
+    ) / duration_s
+
+    # Burst: triplet density per second
+    features["burst"] = float(
+        sum(1 for j in range(2, len(times)) if times[j] - times[j-2] < params["bst_dt"])
+    ) / duration_s
+
+    # Chord: fraction of notes that are part of chords (>=ch_order simultaneous)
+    ch_order = int(round(params["ch_order"]))
+    chord_count = 0
+    for j in range(len(ns)):
+        t = times[j]
+        cnt = 1
+        k = j - 1
+        while k >= 0 and abs(times[k] - t) < 2:
+            cnt += 1
+            k -= 1
+        if cnt >= ch_order:
+            chord_count += 1
+    features["chord"] = chord_count / max(len(ns), 1)
+
+    # PJ ratio: stream/jack balance
+    Jbar = cache["Jbar_base"]
+    Pbar = cache["Pbar_base"]
+    features["pj"] = (
+        float(np.mean(Pbar) / (np.mean(Jbar) + 1))
+        if len(Jbar) > 0 and len(Pbar) > 0
+        else 1.5
+    )
+
+    # Hand-switch: cross-hand transitions per second
+    hand_mask = (
+        ((cols[:-1] < 3) & (cols[1:] >= 4)) |
+        ((cols[:-1] >= 4) & (cols[1:] < 3))
+    )
+    features["hs"] = float(
+        np.sum(hand_mask & (dt_ns < params["hs_dt"]))
+    ) / duration_s
+
+    # Light burst: 4-note burst density
+    features["lb"] = float(
+        sum(1 for j in range(3, len(times)) if times[j] - times[j-3] < params["lb_dt"])
+    ) / duration_s
+
+    # Fast jack: same-column rapid notes per second
+    same_col = dc_ns == 0
+    features["fj"] = (
+        float(np.sum(dt_ns[same_col] < params["fj_dt"])) / duration_s
+        if np.any(same_col)
+        else 0.0
+    )
+
+    return features
+
+
+# ============================================================================
 # CLI Entry Point
 # ============================================================================
 
@@ -3697,7 +3810,7 @@ def _load_params():
 
 
 def compute_sr_map(osu_path, params=None):
-    """Compute Star Rating for a single .osu chart.
+    """Compute Star Rating for a single .osu chart with correction layer.
 
     Args:
         osu_path: path to .osu file
@@ -3705,7 +3818,7 @@ def compute_sr_map(osu_path, params=None):
 
     Returns:
         sr: float Star Rating value
-        details: dict with diagnostic info (D_all, D_solved, component values, etc.)
+        details: dict with diagnostic info (D_all, D_solved, correction, features, etc.)
     """
     if params is None:
         params = dict(TUNED_PARAMS)
@@ -3715,27 +3828,63 @@ def compute_sr_map(osu_path, params=None):
         p.update(params)
         params = p
     params["use_sigmoid_aggregation"] = 1
+
+    # Step 1-2: Standard SPM precompute + combine
     cache = precompute(osu_path, use_enhanced=True, params=params)
-    sr, details = combine(cache, params=params)
-    return sr, details
+    sr_base, details = combine(cache, params=params)
+    D_full = details["D_all"]
+    C_arr = details["C_arr"]
+
+    # Step 3: D calibration
+    cal_a = params.get("calib_a", 0.893)
+    cal_b = params.get("calib_b", 0.031)
+    D_calib = cal_a * D_full + cal_b
+
+    # Step 4: Compute features and correction
+    features = compute_features(cache)
+    correction = sum(
+        CORRECTION_WEIGHTS.get(fn, 0.0) * features.get(fn, 0.0)
+        for fn in FEATURE_NAMES
+    )
+
+    # Step 5: Apply correction
+    D_new = np.maximum(D_calib + correction, 0.01)
+
+    # Step 6: Aggregation with corrected postprocess params
+    total_notes = compute_total_notes(cache["note_seq"], cache["LN_seq"])
+    SR, agg_details = compute_SR_sigmoid(
+        cache["all_corners"], C_arr, D_new, total_notes, cache["LN_seq"],
+        sigmoid_k=params.get("agg_sigmoid_k", 2.09),
+        sigmoid_C=params.get("agg_sigmoid_C", 3.969),
+        sigmoid_gamma=params.get("agg_sigmoid_ref_gamma", 0.196),
+        note_norm_N0=CORRECTION_POSTPROCESS["N0"],
+        rescale_threshold=CORRECTION_POSTPROCESS["threshold"],
+        rescale_divisor=CORRECTION_POSTPROCESS["divisor"],
+        global_scale=CORRECTION_POSTPROCESS["scale"],
+    )
+
+    details.update({
+        "sr_base": sr_base,
+        "sr_corrected": SR,
+        "correction": correction,
+        "features": features,
+    })
+
+    return SR, details
 
 
 def main():
-    # Ensure UTF-8 for Chinese output (needed for frozen exe)
-    if hasattr(sys.stdout, 'reconfigure'):
-        sys.stdout.reconfigure(encoding='utf-8')
-
     print("=" * 55)
-    print("  SPM Rating — Sigmoid 聚合 SR 计算器")
+    print("  SPM Rating — Sigmoid 聚合 + 特征修正 SR 计算器")
     print("=" * 55)
     print(f"  k={TUNED_PARAMS['agg_sigmoid_k']:.2f}, C={TUNED_PARAMS['agg_sigmoid_C']:.2f}, "
           f"gamma={TUNED_PARAMS['agg_sigmoid_ref_gamma']:.3f}")
-    print(f"  训练 MAE={0.2180}, Pass@0.5={89.4}%")
+    print(f"  训练 MAE=0.2180, CV Test Loss=0.862")
+    print(f"  修正层: {len(FEATURE_NAMES)} 个特征")
     print()
 
     args = sys.argv[1:]
-    default_dir = os.getcwd() if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
-    target = args[0] if args else default_dir
+    target = args[0] if args else os.path.dirname(os.path.abspath(__file__))
 
     # Collect .osu files
     if os.path.isfile(target) and target.endswith(".osu"):
@@ -3749,17 +3898,19 @@ def main():
         osu_files.sort()
     else:
         print(f"  无效目标: {target}")
-        return
+        sys.exit(1)
 
     if not osu_files:
         print(f"  未找到 .osu 文件")
-        return
+        sys.exit(1)
 
     if len(osu_files) == 1:
         fpath = osu_files[0]
         print(f"  计算: {os.path.basename(fpath)}")
         sr, d = compute_sr_map(fpath)
-        print(f"  SR = {sr:.4f}")
+        print(f"  SR (base):     {d.get('sr_base', 0):.4f}")
+        print(f"  SR (corrected): {sr:.4f}")
+        print(f"  Correction:     {d.get('correction', 0):+.4f}")
         print(f"  D_all 范围: [{d.get('D_min',0):.2f}, {d.get('D_max',0):.2f}]")
         print(f"  D_solved: {d.get('D_solved',0):.2f}")
         if 'n_raw' in d:
@@ -3789,11 +3940,8 @@ def main():
         srs = [r[1] for r in results]
         print(f"  SR 范围: {min(srs):.4f} ~ {max(srs):.4f}")
     print("=" * 55)
+    input()
 
 
 if __name__ == "__main__":
     main()
-    try:
-        input("\n按 Enter 退出...")
-    except EOFError:
-        pass

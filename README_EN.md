@@ -4,9 +4,9 @@ English | [中文](README.md)
 
 An open-source difficulty rating algorithm for osu!mania **7K** beatmaps.
 
-**Core design**: 7 independent difficulty components extract multi-dimensional structural features — jack density, column-distance-weighted cross coordination, stream density, LN release interaction, anchor unevenness, shield protection, and inverse penalty. All components are composited into instantaneous difficulty D(t) at ~500Hz resolution under a unified Precompute/Combine architecture, then aggregated through a Sigmoid player accuracy model to produce star ratings highly consistent with community consensus.
+**Core design**: 7 independent difficulty components extract multi-dimensional structural features — jack density, column-distance-weighted cross coordination, stream density, LN release interaction, anchor unevenness, shield protection, and inverse penalty. All components are composited into instantaneous difficulty D(t) at ~500Hz resolution under a unified Precompute/Combine architecture, aggregated through a Sigmoid player accuracy model, then refined by a **feature correction layer** (7 chart-level features, L2-regularized linear model) to capture systematic biases in the D formula, producing star ratings highly consistent with community consensus.
 
-Trained on **311 beatmaps** (148 Dan + 57 Tournament + 20 Graveyard + 86 Ranked) via alternating-block Nelder-Mead optimization.
+Trained on **311 beatmaps** (148 Dan + 57 Tournament + 20 Graveyard + 86 Ranked) via alternating-block Nelder-Mead optimization, with the correction layer independently trained via L2-regularized linear regression.
 
 ## Quick Start
 
@@ -42,16 +42,19 @@ print(f"D_solved = {details['D_solved']:.2f}")
 
 | Metric | Value |
 |--------|-------|
-| **MAE** | 0.2180 |
-| **Loss** | 0.9321 |
-| **Correlation** | 0.9881 |
-| **Pass@0.5** | 89.4% |
+| **MAE** | 0.213 |
+| **In-sample Loss** | 0.770 |
+| **CV Test Loss** | 0.862 (5-fold) |
+| **Correlation** | 0.989 |
+| **Pass@0.5** | 83.6% |
 
 By source (311 charts):
-- Dan (148 charts): MAE = 0.1968
-- Tournament (57 charts): MAE = 0.2218
-- Graveyard (20 charts): MAE = 0.3800
-- Ranked (86 charts): MAE = 0.2500
+- Dan (148 charts): MAE ~0.20
+- Tournament (57 charts): MAE ~0.22
+- Graveyard (20 charts): MAE ~0.38
+- Ranked (86 charts): MAE ~0.25
+
+**Correction layer improvement**: On top of Sigmoid aggregation, the correction layer reduces in-sample loss from 0.932 to 0.770 (-17.4%) via 7 chart-level features capturing systematic D formula biases.
 
 ## Algorithm
 
@@ -97,15 +100,40 @@ $$\sum \frac{w_i}{C + e^{k(D_i-D)}} = total\_W \cdot \gamma$$
 
 Solved via bisection → D_solved is the raw SR.
 
-### 3. Post-processing
+### 3. Feature Correction Layer
+
+The D formula has **systematic biases** (e.g., overestimating chord density, underestimating fast jack fatigue). The correction layer captures these via 7 chart-level features:
 
 ```
-SR = D_solved × n_eff/(n_eff + N0)        # Note count normalization (N0=8.21)
-if SR > 9.42: SR = 9.42 + (SR - 9.42)/2.01  # High SR compression
-SR *= 1.055                                 # Global scale
+correction = Σ w_j × feature_j    (j ∈ {speed, burst, chord, pj, hs, lb, fj})
+D_new(t) = D_calib(t) + correction
 ```
 
-### 4. D Pre-calibration
+| Feature | Weight | Physical Meaning |
+|---------|--------|------------------|
+| **chord** | -0.714 | Chord density (multi-column simultaneous coordination benefit) |
+| **fj** | +0.265 | Fast jack (same-column rapid hit cumulative fatigue) |
+| hs | +0.043 | Hand-switch (left-right hand coordination) |
+| lb | +0.020 | Light burst (4-note groups) |
+| speed | -0.038 | Speed patterns |
+| burst | -0.025 | Burst patterns |
+| pj | -0.005 | Stream/jack balance |
+
+The correction layer is a **scalar linear model** (time-invariant), exploiting D_solved translation invariance for ~1500× speedup. L2 regularization (λ=0.01) controls weight magnitudes to prevent overfitting.
+
+Full methodology: see `docs/TUNING_CORRECTION_LAYER_EN.md`.
+
+### 4. Post-processing
+
+The correction layer jointly re-optimized post-processing parameters:
+
+```
+SR = D_solved × n_eff/(n_eff + N0)        # Note count normalization (N0=0.0005)
+if SR > 9.40: SR = 9.40 + (SR - 9.40)/1.98  # High SR compression
+SR *= 1.061                                 # Global scale
+```
+
+### 5. D Pre-calibration
 
 D(t) is linearly pre-calibrated before sigmoid aggregation:
 
@@ -113,7 +141,7 @@ $$D'(t) = 0.893 \cdot D(t) + 0.031$$
 
 This compensates for calibration bias from percentile-based tuning.
 
-### 5. Sub-models
+### 6. Sub-models
 
 - **RC Model**: Disables Rbar/Sbar/Vbar (Rice-only, LN heads treated as taps)
 - **LN Model**: Uses LN-only masked aggregation (excludes RC-dominant sections)
@@ -123,6 +151,7 @@ This compensates for calibration bias from percentile-based tuning.
 | File | Contents |
 |------|----------|
 | `tuned_params_sigmoid.json` | Total SR parameters (Sigmoid aggregation, MAE=0.2180) |
+| `tuned_correction.json` | Feature correction layer weights (7 features + 4 postprocess, CV Test Loss=0.862) |
 | `tuned_params_rc.json` | RC sub-model parameters |
 | `tuned_params_ln.json` | LN sub-model parameters |
 
@@ -132,15 +161,18 @@ This compensates for calibration bias from percentile-based tuning.
 spm_rating/
 ├── README.md                     # This document
 ├── LICENSE                       # MIT
-├── spm_calc_standalone.py                # ★ Standalone SR calculator (Recommended)
-├── spm_calc.py                   # Module-based calculator
+├── spm_calc_standalone.py                # ★ Standalone SR calculator (Recommended, with correction)
+├── spm_calc.py                   # Module-based calculator (with correction)
 ├── tune_terminal.py              # Interactive tuning terminal
 ├── tuned_params_sigmoid.json     # Optimal sigmoid params
+├── tuned_correction.json         # ★ Feature correction layer (7 features + 4 postprocess)
 ├── tuned_params_rc.json          # RC sub-model params
 ├── tuned_params_ln.json          # LN sub-model params
 ├── docs/
-│   ├── TUNING_METHODOLOGY.md      # Tuning methodology
-│   └── TUNING_METHODOLOGY_EN.md   # English version
+│   ├── TUNING_CORRECTION_LAYER.md   # ★ Correction layer methodology
+│   ├── TUNING_CORRECTION_LAYER_EN.md# English version
+│   ├── TUNING_METHODOLOGY.md        # Sigmoid layer methodology
+│   └── TUNING_METHODOLOGY_EN.md     # English version
 ├── spm_rating/                   # Core algorithm
 │   ├── rating.py                 # precompute() + combine() entry
 │   ├── aggregate_sigmoid.py      # Sigmoid aggregation (bisection)
@@ -224,6 +256,8 @@ for entry in entries:
 
 ## Tuning
 
+### Sigmoid Layer: Alternating-Block Nelder-Mead
+
 Parameters were optimized via **alternating-block Nelder-Mead** (6 blocks × 2 rounds, 50→25 iterations):
 
 | Block | Parameters | Mode | Contribution |
@@ -235,11 +269,28 @@ Parameters were optimized via **alternating-block Nelder-Mead** (6 blocks × 2 r
 | B3c | Inverse feature params (incl. same_col_bonus) | Full | Minimal improvement |
 | B3d | Jack aggregation params | Full | Minimal improvement |
 
-Key finding: **k=2.09 is optimal** (largest single improvement).
+Key finding: **k=2.09 is optimal** (largest single improvement). Full methodology: see `docs/TUNING_METHODOLOGY_EN.md`.
 
-Full methodology: see `docs/TUNING_METHODOLOGY.md`.
+### Correction Layer: L2-Regularized Linear Regression
+
+The correction layer is independently trained on top of the Sigmoid layer (11 parameters, not blocked):
+
+- **Optimizer**: Nelder-Mead (maxiter=10000, xatol=1e-7, fatol=1e-7, adaptive=True)
+- **Regularization**: L2 (λ=0.01), controls weight magnitudes
+- **Cross-validation**: 5-fold CV (seed=42), CV Test Loss=0.862
+- **Key technique**: Exploits D_solved translation invariance for ~1500× speedup
+
+Full methodology: see `docs/TUNING_CORRECTION_LAYER_EN.md`.
 
 ## Version History
+
+### v0.3.0 (Current)
+- **Added feature correction layer**: 7 chart-level features (speed, burst, chord, pj, hs, lb, fj), L2-regularized linear model
+- In-sample Loss: 0.932 → **0.770** (-17.4%)
+- CV Test Loss: **0.862** (5-fold, gap=0.092)
+- MAE: 0.218 → **0.213**, Correlation: 0.988 → **0.989**
+- Post-processing parameters jointly re-optimized with correction layer
+- Full tuning methodology: `docs/TUNING_CORRECTION_LAYER_EN.md`
 
 ### v0.2.0
 - Dataset expanded from 213 to **311 charts** (added 86 Ranked + 12 Tournament)
