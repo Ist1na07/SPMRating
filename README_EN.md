@@ -6,7 +6,7 @@ An open-source difficulty rating algorithm for osu!mania **7K** beatmaps.
 
 ## Origin
 
-This algorithm is based on **[Star-Rating-Rebirth](https://github.com/SunnyO8/Star-Rating-Rebirth)** (sunny rework) and evolved through the following modifications:
+This algorithm is based on **[Star-Rating-Rebirth](https://github.com/sunnyxxy/Star-Rating-Rebirth)** (sunny rework) and evolved through the following modifications:
 
 - **Difficulty component expansion**: Beyond the original jack / stream components, new components were added — inverse (density-reversal penalty), shield (shield protection), release (LN release interaction) — and cross (column-distance weighting) was rewritten.
 - **D(t) formula restructuring**: Component composition changed from linear superposition to a nonlinear form (`β1·√S·T^1.5 + β2·S + α·component`), better matching realistic fatigue accumulation.
