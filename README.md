@@ -6,7 +6,7 @@
 
 ## 起源
 
-本算法以 **[Star-Rating-Rebirth](https://github.com/SunnyO8/Star-Rating-Rebirth)**（sunny rework）为基础，经以下方向的修改演化而来：
+本算法以 **[Star-Rating-Rebirth](https://github.com/sunnyxxy/Star-Rating-Rebirth)**（sunny rework）为基础，经以下方向的修改演化而来：
 
 - **难度分量扩展**：在原始 jack / stream 等分量之外，新增 inverse（密度反转惩罚）、shield（护盾保护）、release（LN 释放交互）等分量，并重写 cross（列间距离加权）。
 - **D(t) 公式重构**：将分量合并方式从线性叠加改为非线性组合（`β1·√S·T^1.5 + β2·S + α·分量` 形式），更贴近实际疲劳叠加规律。
