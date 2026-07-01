@@ -58,6 +58,25 @@ def parse_difficulty(value):
     return None
 
 
+def parse_float(value, default=0.5):
+    """Parse a numeric value that may be a float, int, string with comma decimal,
+    NaN, or missing. Returns default if unparseable/missing."""
+    if pd.isna(value):
+        return default
+    if isinstance(value, (int, float)):
+        return float(value)
+    s = str(value).strip()
+    if s == "" or s == "?":
+        return default
+    # handle comma decimal: '1,5' -> '1.5'
+    if "," in s and "." not in s:
+        s = s.replace(",", ".")
+    try:
+        return float(s)
+    except ValueError:
+        return default
+
+
 def parse_accurate(value, difficulty_value):
     """
     Parse accurate difficulty notation.
@@ -125,6 +144,12 @@ def load_playtest_data(maps_root=None):
         df = pd.read_excel(grave_xlsx)
         entries += _parse_playtest_df(df, "graveyard")
 
+    # === Ranked Playtest ===
+    ranked_xlsx = os.path.join(maps_root, "maps", "Ranked", "RankedPlaytest.xlsx")
+    if os.path.exists(ranked_xlsx):
+        df = pd.read_excel(ranked_xlsx)
+        entries += _parse_playtest_df(df, "ranked")
+
     # === Map .osu file paths to entries ===
     _match_osu_paths(entries, maps_root)
 
@@ -152,19 +177,19 @@ def _parse_playtest_df(df, source):
             continue
 
         acc_raw = parse_accurate(row.get("accurate difficulty"), diff_raw)
-        error_raw = float(row.get("error", 0.5)) if pd.notna(row.get("error")) else 0.5
+        error_raw = parse_float(row.get("error", 0.5), 0.5)
 
         sr_ref, sr_error = diff_to_sr(diff_raw, acc_raw, error_raw)
 
         # RC sub-difficulty
         d_rc = parse_difficulty(row.get("d(rc)"))
         ad_rc = parse_accurate(row.get("ad(rc)"), d_rc)
-        e_rc = float(row.get("e(rc)", 0.5)) if pd.notna(row.get("e(rc)")) else 0.5
+        e_rc = parse_float(row.get("e(rc)", 0.5), 0.5)
 
         # LN sub-difficulty
         d_ln = parse_difficulty(row.get("d(ln)"))
         ad_ln = parse_accurate(row.get("ad(ln)"), d_ln)
-        e_ln = float(row.get("e(ln)", 0.5)) if pd.notna(row.get("e(ln)")) else 0.5
+        e_ln = parse_float(row.get("e(ln)", 0.5), 0.5)
 
         tags = str(row.get("tags", "")) if pd.notna(row.get("tags")) else ""
         sort = str(row.get("sort", "")) if pd.notna(row.get("sort")) else ""

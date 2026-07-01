@@ -33,9 +33,15 @@ FEATURE_PARAMS = {
     "spd_dt": 150, "spd_dc": 3,
     "bst_dt": 100, "ch_order": 4,
     "hs_dt": 200, "lb_dt": 150, "fj_dt": 100,
+    "nps_window_ms": 500,   # nps_std: 窗口长度
+    "chord_tol_ms": 5,      # chord2: 同时击打容差
 }
 
-FEATURE_NAMES = ["speed", "burst", "chord", "pj", "hs", "lb", "fj"]
+# v4.0: 在 v1 的 7 个特征基础上新增 2 个
+#   nps_std    — 密度时变波动（500ms 窗口 NPS 的标准差）
+#   chord2     — 双押密度（恰好 2 列同时击打的事件占比）
+# 两者正交且与现有特征低共线，经 forward selection 确认为最优组合。
+FEATURE_NAMES = ["speed", "burst", "chord", "pj", "hs", "lb", "fj", "nps_std", "chord2"]
 
 
 def load_params():
@@ -139,6 +145,43 @@ def compute_features(cache, params=None):
         if np.any(same_col)
         else 0.0
     )
+
+    # --- v4.0 新增特征 ---
+
+    # nps_std: 密度时变波动
+    # 将谱面按固定窗口分段，计算每段 NPS（每秒音符数），取标准差。
+    # 高 nps_std = 爆发段 + 休息段交替（有恢复）；低 nps_std = 全程均匀密度。
+    # 捕捉现有 7 个密度特征缺失的"时变"维度。
+    window_ms = params["nps_window_ms"]
+    duration_ms = max(times[-1] - times[0], 1.0)
+    n_windows = int(duration_ms / window_ms) + 1
+    if n_windows > 1:
+        window_nps = []
+        for w in range(n_windows):
+            lo = times[0] + w * window_ms
+            hi = lo + window_ms
+            count = int(np.sum((times >= lo) & (times < hi)))
+            window_nps.append(count / (window_ms / 1000.0))
+        features["nps_std"] = float(np.std(window_nps))
+    else:
+        features["nps_std"] = 0.0
+
+    # chord2: 双押密度
+    # 将音符按容差聚成"和弦事件"（同时击打的一组音符），统计恰好含 2 个音符
+    # 的事件占比。捕捉 jumpstream / chordstream 中双指同时发力的程度。
+    # 注：v1 的 chord 特征阈值是 >=4 列，只覆盖大和弦；chord2 覆盖最常见的
+    # 双押，两者互补。单独筛 3 音/4+ 音和弦均无效或与 chord 冗余，故不加入。
+    tol = params["chord_tol_ms"]
+    chord_sizes = []
+    i = 0
+    while i < len(times):
+        j = i + 1
+        while j < len(times) and times[j] - times[i] < tol:
+            j += 1
+        chord_sizes.append(j - i)
+        i = j
+    n_chord_events = max(len(chord_sizes), 1)
+    features["chord2"] = float(sum(1 for c in chord_sizes if c == 2)) / n_chord_events
 
     return features
 

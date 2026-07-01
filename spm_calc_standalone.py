@@ -12,8 +12,9 @@ SPM Rating — 独立 SR 计算器 (Sigmoid 玩家准度聚合 + 特征修正层
 模型:
   - Enhanced 模式 (Cross/Release/Shield/Inverse 全量分量)
   - Sigmoid 准确度聚合 (k=2.09, C=3.97, γ=0.196)
-  - 特征修正层 (7 个谱面特征, L2 正则化, λ=0.01)
-  - 311 张 playtest 谱面调优, MAE=0.2180, CV Test Loss=0.862
+  - 特征修正层 (9 个谱面特征, L2 正则化, λ=0.01)
+    v4.0: 在 v1 的 7 特征上新增 nps_std (密度时变波动) + chord2 (双押密度)
+  - 315 张 playtest 谱面调优, In-sample Loss=0.698, CV Test Loss=0.874
 
 构建时间: """ + __import__("datetime").datetime.now().strftime("%Y-%m-%d") + """
 """
@@ -42,7 +43,7 @@ except ImportError:
 
 
 # ============================================================================
-# Tuned Parameters (from tuned_params_sigmoid.json, MAE=0.2180)
+# Tuned Parameters (from tuned_params_sigmoid.json)
 # ============================================================================
 
 TUNED_PARAMS = {
@@ -116,32 +117,37 @@ TUNED_PARAMS["use_sigmoid_aggregation"] = 1
 
 
 # ============================================================================
-# Correction Layer (7 features, L2 regularized, λ=0.01)
+# Correction Layer (v4.0: 9 features, L2 regularized, λ=0.01)
+#   v1 的 7 特征 + nps_std (密度时变波动) + chord2 (双押密度)
 # ============================================================================
 
 CORRECTION_WEIGHTS = {
-        "speed": -0.0380996735738698,
-        "burst": -0.025148794588902998,
-        "chord": -0.71420012109205,
-        "pj": -0.0050070390858298125,
-        "hs": 0.04346521445328749,
-        "lb": 0.020229065240061,
-        "fj": 0.26523765756302176
+        "speed": -0.04650430730048627,
+        "burst": -0.02859351745291927,
+        "chord": -0.7688325984612918,
+        "pj": 0.0022701858018914223,
+        "hs": 0.07263638646456005,
+        "lb": 0.016218424130487907,
+        "fj": 0.031132801295881807,
+        "nps_std": -0.013917292721772556,
+        "chord2": -0.6560718870828117
     }
 
 CORRECTION_POSTPROCESS = {
-        "N0": 0.00048019189651536405,
-        "threshold": 9.398828546361862,
-        "divisor": 1.9841881487426187,
-        "scale": 1.0614719389587273
+        "N0": 1.028619384641953,
+        "threshold": 9.106357175391555,
+        "divisor": 1.9709334450462341,
+        "scale": 1.0943832892581231
     }
 
-FEATURE_NAMES = ["speed", "burst", "chord", "pj", "hs", "lb", "fj"]
+FEATURE_NAMES = ["speed", "burst", "chord", "pj", "hs", "lb", "fj", "nps_std", "chord2"]
 
 FEATURE_PARAMS = {
     "spd_dt": 150, "spd_dc": 3,
     "bst_dt": 100, "ch_order": 4,
     "hs_dt": 200, "lb_dt": 150, "fj_dt": 100,
+    "nps_window_ms": 500,   # nps_std: 窗口长度
+    "chord_tol_ms": 5,      # chord2: 同时击打容差
 }
 
 
@@ -3790,6 +3796,41 @@ def compute_features(cache, params=None):
         else 0.0
     )
 
+    # --- v4.0 新增特征 ---
+
+    # nps_std: 密度时变波动
+    # 将谱面按固定窗口分段，计算每段 NPS（每秒音符数），取标准差。
+    # 高 nps_std = 爆发段 + 休息段交替（有恢复）；低 nps_std = 全程均匀密度。
+    window_ms = params["nps_window_ms"]
+    duration_ms = max(times[-1] - times[0], 1.0)
+    n_windows = int(duration_ms / window_ms) + 1
+    if n_windows > 1:
+        window_nps = []
+        for w in range(n_windows):
+            lo = times[0] + w * window_ms
+            hi = lo + window_ms
+            count = int(np.sum((times >= lo) & (times < hi)))
+            window_nps.append(count / (window_ms / 1000.0))
+        features["nps_std"] = float(np.std(window_nps))
+    else:
+        features["nps_std"] = 0.0
+
+    # chord2: 双押密度
+    # 将音符按容差聚成"和弦事件"（同时击打的一组音符），统计恰好含 2 个音符
+    # 的事件占比。捕捉 jumpstream / chordstream 中双指同时发力的程度。
+    # v1 的 chord 特征阈值是 >=4 列，只覆盖大和弦；chord2 覆盖最常见的双押。
+    tol = params["chord_tol_ms"]
+    chord_sizes = []
+    i = 0
+    while i < len(times):
+        j = i + 1
+        while j < len(times) and times[j] - times[i] < tol:
+            j += 1
+        chord_sizes.append(j - i)
+        i = j
+    n_chord_events = max(len(chord_sizes), 1)
+    features["chord2"] = float(sum(1 for c in chord_sizes if c == 2)) / n_chord_events
+
     return features
 
 
@@ -3940,7 +3981,6 @@ def main():
         srs = [r[1] for r in results]
         print(f"  SR 范围: {min(srs):.4f} ~ {max(srs):.4f}")
     print("=" * 55)
-    input()
 
 
 if __name__ == "__main__":

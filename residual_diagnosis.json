@@ -1,0 +1,167 @@
+{
+  "overall_loss": 0.6976274570566224,
+  "r2_9feat": 0.796505353700073,
+  "r2_ceiling": 0.9478277795284904,
+  "worst_maps": [
+    {
+      "mapfile": "Remo Prototype (CV Hanamori Yumiri) - Sendan Life (katagiri Bootleg) (tyrcs) [Ruin].osu",
+      "loss": 9.894034627975435,
+      "sr_ref": 9.89,
+      "sr": 10.42990875526411,
+      "sort": "rc",
+      "tags": "chordjack"
+    },
+    {
+      "mapfile": "osu!mania 7K Dan Course - 7K Regular Dan Jack Practice (KomeijiDove) [~ Stellium ~  -45 - EXILE [Downfall]].osu",
+      "loss": 9.472618519875894,
+      "sr_ref": 10.76,
+      "sr": 10.235367578654499,
+      "sort": "rc",
+      "tags": "chordjack, anchor"
+    },
+    {
+      "mapfile": "osu!mania 7K Dan Course - 7K Regular Dan Speed Practice (KomeijiDove) [~ Azimuth ~  DJ TECHNORCH - Nijuu [ichi no mae]].osu",
+      "loss": 8.417157213581374,
+      "sr_ref": 9.455,
+      "sr": 8.968628051007675,
+      "sort": "rc",
+      "tags": "speed"
+    },
+    {
+      "mapfile": "Xyris - Eviternity (Critical_Star) [Transcend Light].osu",
+      "loss": 8.30570643259745,
+      "sr_ref": 10.1075,
+      "sr": 10.589831858181658,
+      "sort": "hb",
+      "tags": "hybrid"
+    },
+    {
+      "mapfile": "Yuuna Sasara feat. Tai no Kobone - Imperishable Night 2006 (xxbidiao) [7K Lunatic].osu",
+      "loss": 7.238276024878743,
+      "sr_ref": 8.8025,
+      "sr": 7.471587482294437,
+      "sort": "rc",
+      "tags": "tech, speed"
+    },
+    {
+      "mapfile": "osu!mania 7K Dan Course - 7K Regular Dan Tech Practice (KomeijiDove) [~ 5th ~  The Flashbulb - Passage D [Forbidden Path] (JJ Edit)].osu",
+      "loss": 7.049831861128244,
+      "sr_ref": 5.68355,
+      "sr": 6.120356404965899,
+      "sort": "rc",
+      "tags": "tech"
+    },
+    {
+      "mapfile": "osu!mania 7K Dan Course - 7K Regular Dan Jack Practice (KomeijiDove) [~ 8th ~  Thaehan - Overworld [Nivrad's Streams] (JJ Edit)].osu",
+      "loss": 6.787418840320678,
+      "sr_ref": 7.279999999999999,
+      "sr": 6.42541213407675,
+      "sort": "rc",
+      "tags": "chordjack, vibro"
+    },
+    {
+      "mapfile": "KOOOZ - Inorganic compound (Ist1na) [Forward].osu",
+      "loss": 6.303544094618568,
+      "sr_ref": 8.00645,
+      "sr": 7.596696526570076,
+      "sort": "rc",
+      "tags": "chordjack, speed"
+    },
+    {
+      "mapfile": "Laur - SYSTEM ERROR (Leeju) [Obsession Nyctophilia].osu",
+      "loss": 5.901103821604485,
+      "sr_ref": 8.293549999999998,
+      "sr": 8.68871501353316,
+      "sort": "hb",
+      "tags": "hybrid"
+    },
+    {
+      "mapfile": "osu!mania 7K Dan Course - 7K Regular Dan Jack Practice (KomeijiDove) [~ 1st ~  dai - dir [Hard]].osu",
+      "loss": 5.69920503488205,
+      "sr_ref": 4.234999999999999,
+      "sr": 3.4593076349710508,
+      "sort": "rc",
+      "tags": "minijack, dense chordstream, vibro"
+    },
+    {
+      "mapfile": "Kankitsu - Prayer (Kim_GodSSI) [Goddess].osu",
+      "loss": 5.495606465182771,
+      "sr_ref": 8.8025,
+      "sr": 8.422034265637125,
+      "sort": "ln",
+      "tags": "technical, density"
+    },
+    {
+      "mapfile": "Various Artists - BMS jack pack (-NaKO) [True Millennium Queen (LV.18)].osu",
+      "loss": 5.463586111517069,
+      "sr_ref": 7.42355,
+      "sr": 6.664940006915012,
+      "sort": "rc",
+      "tags": "chordjack"
+    },
+    {
+      "mapfile": "KOOOZ - Inorganic compound (Ist1na) [Breakthrough].osu",
+      "loss": 5.233800013579717,
+      "sr_ref": 8.8025,
+      "sr": 8.431524749507735,
+      "sort": "rc",
+      "tags": "chordjack, speed"
+    },
+    {
+      "mapfile": "Reine - Ren Jian Wan Duo Hong (Hoshimegu Mio) [Zhong Guo Hong].osu",
+      "loss": 5.03585506985854,
+      "sr_ref": 8.8025,
+      "sr": 8.074900507435256,
+      "sort": "ln",
+      "tags": "coordination"
+    },
+    {
+      "mapfile": "osu!mania 7K Dan Course - 7K Regular Dan Speed Practice (KomeijiDove) [~ 6th ~  -45 - 44river [Delayanother]].osu",
+      "loss": 4.573155914352058,
+      "sr_ref": 6.41,
+      "sr": 6.062973098104738,
+      "sort": "rc",
+      "tags": "speed"
+    },
+    {
+      "mapfile": "EBIMAYO - NIGHTMARE INVITATION (Blocko) [EXTREME].osu",
+      "loss": 4.516836678587001,
+      "sr_ref": 7.57145,
+      "sr": 7.916435329598778,
+      "sort": "rc",
+      "tags": "fast chordstream"
+    },
+    {
+      "mapfile": "osu!mania 7K Dan Course - 7K Regular Dan Tech Practice (KomeijiDove) [~ Stellium ~  Aquellex - Wanderflux [Gekido's Annihilation+ (315 BPM)]].osu",
+      "loss": 4.444645301049926,
+      "sr_ref": 10.76,
+      "sr": 10.41763160783694,
+      "sort": "rc",
+      "tags": "tech, fast chordstream"
+    },
+    {
+      "mapfile": "osu!mania 7K Dan Course - 7K Regular Dan Speed Practice (KomeijiDove) [~ 3rd ~  Sakuzyo - Altale [epilogue_18] (JJ Edit)].osu",
+      "loss": 4.232774394537385,
+      "sr_ref": 5.1049999999999995,
+      "sr": 5.77437614360396,
+      "sort": "rc",
+      "tags": "speed"
+    },
+    {
+      "mapfile": "Grailknights - Pumping Iron Power (feat. Joakim Broden from Sabaton) (MadBricktree) [Extra].osu",
+      "loss": 4.188793607953409,
+      "sr_ref": 5.54,
+      "sr": 6.206187536576622,
+      "sort": "rc",
+      "tags": "chordjack"
+    },
+    {
+      "mapfile": "Laur - Exitium (tyrcs) [Artifact].osu",
+      "loss": 4.058236635792323,
+      "sr_ref": 9.02,
+      "sr": 9.348361078047471,
+      "sort": "rc",
+      "tags": "rc mix"
+    }
+  ]
+}
