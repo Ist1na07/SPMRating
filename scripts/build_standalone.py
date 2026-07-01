@@ -198,7 +198,7 @@ SPM Rating — 独立 SR 计算器 (Sigmoid 玩家准度聚合 + 特征修正层
   - Enhanced 模式 (Cross/Release/Shield/Inverse 全量分量)
   - Sigmoid 准确度聚合 (k=2.09, C=3.97, γ=0.196)
   - 特征修正层 (9 个谱面特征, L2 正则化, λ=0.01)
-    v4.0: 在 v1 的 7 特征上新增 nps_std (密度时变波动) + chord2 (双押密度)
+    v0.4.0: 在 v1 的 7 特征上新增 nps_std (密度时变波动) + chord2 (双押密度)
   - 315 张 playtest 谱面调优, In-sample Loss=0.698, CV Test Loss=0.874
 
 构建时间: """ + __import__("datetime").datetime.now().strftime("%Y-%m-%d") + """
@@ -216,7 +216,7 @@ TUNED_PARAMS["use_sigmoid_aggregation"] = 1
 
 
 # ============================================================================
-# Correction Layer (v4.0: 9 features, L2 regularized, λ=0.01)
+# Correction Layer (v0.4.0: 9 features, L2 regularized, λ=0.01)
 #   v1 的 7 特征 + nps_std (密度时变波动) + chord2 (双押密度)
 # ============================================================================
 
@@ -316,7 +316,7 @@ def compute_features(cache, params=None):
         else 0.0
     )
 
-    # --- v4.0 新增特征 ---
+    # --- v0.4.0 新增特征 ---
 
     # nps_std: 密度时变波动
     # 将谱面按固定窗口分段，计算每段 NPS（每秒音符数），取标准差。

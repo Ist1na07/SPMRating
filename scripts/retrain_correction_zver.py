@@ -1,4 +1,4 @@
-"""Retrain the correction layer with the v4.0 9-feature model (chord2 + nps_std).
+"""Retrain the correction layer with the v0.4.0 9-feature model (chord2 + nps_std).
 
 This is the canonical retraining for the release: v1 D-formula base (no z_level
 modifications), 9 features = v1's 7 + nps_std + chord2.
@@ -182,7 +182,7 @@ def cross_validate(records, block_def, n_folds=5, seed=42, restarts=3):
 
 def main():
     print("="*70, flush=True)
-    print("RETRAIN CORRECTION LAYER — v4.0 (9 features: +nps_std +chord2)", flush=True)
+    print("RETRAIN CORRECTION LAYER — v0.4.0 (9 features: +nps_std +chord2)", flush=True)
     print("="*70, flush=True)
 
     entries = load_playtest_data(maps_root=PROJROOT)

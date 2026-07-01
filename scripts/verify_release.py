@@ -1,8 +1,8 @@
-"""Verify the v4.0 release: full-set loss + Speed Practice distribution.
+"""Verify the v0.4.0 release: full-set loss + Speed Practice distribution.
 
 Compares:
   - v1 baseline (SPMRating-main, 7 features)
-  - v4.0 (SPMRating-Z-Release, 9 features +nps_std +chord2)
+  - v0.4.0 (SPMRating-Z-Release, 9 features +nps_std +chord2)
 
 Reports overall loss, per-sort, and Speed Practice 0th->Stellium distribution.
 """
@@ -127,13 +127,13 @@ def main():
     print(f"loaded {len(caches)} caches")
 
     recs_v1 = eval_repo(MAIN, used, caches, "v1 (SPMRating-main)")
-    recs_z = eval_repo(ZREL, used, caches, "v4.0 (SPMRating-Z-Release)")
+    recs_z = eval_repo(ZREL, used, caches, "v0.4.0 (SPMRating-Z-Release)")
 
     print(f"\n{'='*72}")
     print("OVERALL + PER-SORT")
     print(f"{'='*72}")
     agg(recs_v1, "v1 overall")
-    agg(recs_z, "v4.0 overall")
+    agg(recs_z, "v0.4.0 overall")
     for s in ["rc", "ln", "hb", "mix"]:
         agg([r for r in recs_v1 if r["sort"]==s], f"v1  {s}")
         agg([r for r in recs_z if r["sort"]==s], f"Z   {s}")
@@ -151,7 +151,7 @@ def main():
     rng = np.random.RandomState(42)
     boot = [np.mean(diffs[rng.choice(len(diffs), len(diffs), replace=True)]) for _ in range(10000)]
     ci_lo, ci_hi = np.percentile(boot, [2.5, 97.5])
-    print(f"\n  Paired test (v1 vs v4.0):")
+    print(f"\n  Paired test (v1 vs v0.4.0):")
     print(f"    mean improvement: {np.mean(diffs):+.4f}")
     print(f"    improved: {np.sum(diffs>0)}/{len(diffs)} ({100*np.sum(diffs>0)/len(diffs):.1f}%)")
     print(f"    paired t p={p_val:.4f}  Wilcoxon p={w_p:.4f}")
@@ -161,7 +161,7 @@ def main():
     print("SPEED PRACTICE 0th -> Stellium")
     print(f"{'='*72}")
     speed_table(recs_v1, "v1")
-    speed_table(recs_z, "v4.0")
+    speed_table(recs_z, "v0.4.0")
 
     out = {
         "v1_loss": float(np.mean(lv)), "z_loss": float(np.mean(lz)),

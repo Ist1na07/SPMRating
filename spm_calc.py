@@ -37,7 +37,7 @@ FEATURE_PARAMS = {
     "chord_tol_ms": 5,      # chord2: 同时击打容差
 }
 
-# v4.0: 在 v1 的 7 个特征基础上新增 2 个
+# v0.4.0: 在 v1 的 7 个特征基础上新增 2 个
 #   nps_std    — 密度时变波动（500ms 窗口 NPS 的标准差）
 #   chord2     — 双押密度（恰好 2 列同时击打的事件占比）
 # 两者正交且与现有特征低共线，经 forward selection 确认为最优组合。
@@ -146,7 +146,7 @@ def compute_features(cache, params=None):
         else 0.0
     )
 
-    # --- v4.0 新增特征 ---
+    # --- v0.4.0 新增特征 ---
 
     # nps_std: 密度时变波动
     # 将谱面按固定窗口分段，计算每段 NPS（每秒音符数），取标准差。

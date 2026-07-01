@@ -1,4 +1,4 @@
-"""Residual diagnosis for v4.0 (9-feature model).
+"""Residual diagnosis for v0.4.0 (9-feature model).
 
 Two diagnostic passes:
   PASS 1 — Simple residual diagnosis:

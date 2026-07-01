@@ -1,4 +1,4 @@
-# SPM Rating v4.0 — 7K osu!mania Difficulty Rating
+# SPM Rating v0.4.0 — 7K osu!mania Difficulty Rating
 
 English | [中文](README.md)
 
@@ -6,7 +6,7 @@ An open-source difficulty rating algorithm for osu!mania **7K** beatmaps.
 
 ## Origin
 
-This algorithm is based on **[Star-Rating-Rebirth](https://github.com/sunnyxxy/Star-Rating-Rebirth)** (sunny rework) and evolved through the following modifications:
+This algorithm is based on **[Star-Rating-Rebirth](https://github.com/SunnyO8/Star-Rating-Rebirth)** (sunny rework) and evolved through the following modifications:
 
 - **Difficulty component expansion**: Beyond the original jack / stream components, new components were added — inverse (density-reversal penalty), shield (shield protection), release (LN release interaction) — and cross (column-distance weighting) was rewritten.
 - **D(t) formula restructuring**: Component composition changed from linear superposition to a nonlinear form (`β1·√S·T^1.5 + β2·S + α·component`), better matching realistic fatigue accumulation.
@@ -44,6 +44,18 @@ sr, details = compute_sr_map("chart.osu")
 print(f"SR = {sr:.4f}")
 print(f"D_solved = {details['D_solved']:.2f}")
 ```
+
+## Test Performance
+
+| Metric | Value |
+|--------|-------|
+| **Loss** | 0.6935 |
+| **MAE** | 0.2068 |
+| **Correlation r** | 0.9889 |
+| **Inside%** (error within tolerance) | 83.3% |
+| **Paired t-test p** | 0.0007 |
+
+Improvement over the previous version (v0.3.0): Loss −9.9%, statistically significant. Gains are concentrated in RC (rice) and LN charts.
 
 ## Algorithm Architecture
 
@@ -100,7 +112,7 @@ D_new(t) = D_calib(t) + correction
 
 | Feature | Weight | Meaning |
 |---------|--------|---------|
-| **chord2** | -0.656 | Two-note chord density (exactly-2-column simultaneous events; v4.0 new) |
+| **chord2** | -0.656 | Two-note chord density (exactly-2-column simultaneous events; v0.4.0 new) |
 | **chord** | -0.769 | Chord density (≥4-column simultaneous events reduce per-finger load) |
 | **fj** | +0.031 | Fast jack (same-column rapid-fire fatigue accumulation) |
 | hs | +0.073 | Hand switch (left-right hand coordination) |
@@ -108,9 +120,9 @@ D_new(t) = D_calib(t) + correction
 | speed | -0.047 | Speed-type patterns |
 | burst | -0.029 | Burst-type patterns |
 | pj | +0.002 | Stream / jack balance |
-| **nps_std** | -0.014 | Density temporal variation (500ms-window NPS std; v4.0 new) |
+| **nps_std** | -0.014 | Density temporal variation (500ms-window NPS std; v0.4.0 new) |
 
-**v4.0 new features**:
+**v0.4.0 new features**:
 
 - **chord2** (two-note chord density): The original `chord` feature threshold is ≥4 columns, covering only large chords. chord2 covers the most common two-note chords (jumpstream / chordstream) and is complementary to chord. A high chord2 indicates the chart leans toward two-finger simultaneous effort; per-finger load is heavier than pure stream but Pbar (global NPS) overestimates it, hence the negative-weight compensation. Split experiments confirmed: 3-note chords (chord3) are ineffective; 4+ note chords (chord4p) are redundant with the original chord (correlation 0.955); only two-note chords are effective.
 - **nps_std** (density temporal variation): Split the chart into 500ms windows and compute the per-window NPS standard deviation. High nps_std = burst + rest alternation (recovery available); low nps_std = uniform density throughout (sustained fatigue). Captures the "temporal" dimension missing from the existing 7 features, orthogonal to chord2.
@@ -142,7 +154,7 @@ Compensates for magnitude bias from component aggregation.
 | File | Contents |
 |------|----------|
 | `tuned_params_sigmoid.json` | Main-formula parameters (component weights, aggregation params, pre-calibration) |
-| `tuned_correction.json` | Feature correction layer weights (v4.0: 9 features + 4 postprocess) |
+| `tuned_correction.json` | Feature correction layer weights (v0.4.0: 9 features + 4 postprocess) |
 | `tuned_params_rc.json` | RC sub-model parameters |
 | `tuned_params_ln.json` | LN sub-model parameters |
 
@@ -157,7 +169,7 @@ SPMRating-Z-Release/
 ├── spm_calc.py                      # Module-version calculator (with correction layer)
 ├── tune_terminal.py                 # Interactive tuning terminal
 ├── tuned_params_sigmoid.json        # Optimal main-formula parameters
-├── tuned_correction.json            # ★ Feature correction layer weights (v4.0: 9 features + 4 postprocess)
+├── tuned_correction.json            # ★ Feature correction layer weights (v0.4.0: 9 features + 4 postprocess)
 ├── tuned_params_rc.json             # RC sub-model parameters
 ├── tuned_params_ln.json             # LN sub-model parameters
 ├── docs/
@@ -194,7 +206,7 @@ SPMRating-Z-Release/
     ├── sweep_k_fine.py              # Fine k sweep
     ├── rebuild_enhanced_cache.py    # Cache rebuild
     ├── build_standalone.py          # Build standalone single file
-    ├── retrain_correction_zver.py   # v4.0 correction-layer retraining
+    ├── retrain_correction_zver.py   # v0.4.0 correction-layer retraining
     ├── residual_diagnosis.py        # Residual diagnosis
     └── verify_release.py            # Release verification
 ```
@@ -258,6 +270,35 @@ This algorithm powers the **SPM Map Analyser** tosu in-game overlay plugin:
 - **numpy** (required)
 - **scipy** (only for Nelder-Mead tuning)
 - **pandas** (only for playtest evaluation)
+
+## Changelog
+
+### v0.4.0
+- **Feature correction layer expanded**: added 2 chart-level features — **nps_std** (density temporal variation) and **chord2** (two-note chord density); feature count 7 → 9
+- Optimal combination confirmed via batch feature screening + forward selection; chord2 split experiments confirmed only two-note chords are effective (3-note ineffective, 4+ note redundant with original chord)
+- In-sample Loss: 0.770 → **0.694** (−9.9%), paired t-test p=0.0007
+- MAE: 0.213 → **0.207**
+- Correction-layer weights and postprocess params jointly retrained (5 restarts + 5-fold CV)
+
+### v0.3.0
+- **Added feature correction layer**: 7 chart-level features (speed, burst, chord, pj, hs, lb, fj), L2-regularized linear model
+- In-sample Loss: 0.932 → **0.770** (−17.4%)
+- CV Test Loss: **0.862** (5-fold, gap=0.092)
+- MAE: 0.218 → **0.213**, correlation: 0.988 → **0.989**
+- Postprocess params jointly re-optimized with the correction layer
+- Full tuning methodology: `docs/TUNING_CORRECTION_LAYER.md`
+
+### v0.2.0
+- Dataset expanded from 213 to **311 charts** (added 86 Ranked + 12 Tournament)
+- k value re-scan optimized: 1.5 → **2.09** (coarse scan + fine scan validation)
+- C-γ self-consistency verified: γ ≈ 1/(C+1), C=3.97, γ=0.196
+- Tuning blocks expanded from 5 to **6 blocks**: added B3d (Jack), B3b/B3c gained 2/1 params
+- RC sub-model retrained: MAE=0.2366 (27% improvement)
+- LN sub-model retrained: MAE=0.8162 (needs architectural redesign)
+
+### v0.1.0
+- Initial release: Sigmoid aggregation (k=1.5, C=4.0, γ=0.20) + 7-component D formula
+- Trained on 213 charts, MAE=0.2253
 
 ## License
 

@@ -1,4 +1,4 @@
-# SPM Rating v4.0 — 7K osu!mania 难度评级算法
+# SPM Rating v0.4.0 — 7K osu!mania 难度评级算法
 
 [English](README_EN.md) | 中文
 
@@ -6,7 +6,7 @@
 
 ## 起源
 
-本算法以 **[Star-Rating-Rebirth](https://github.com/sunnyxxy/Star-Rating-Rebirth)**（sunny rework）为基础，经以下方向的修改演化而来：
+本算法以 **[Star-Rating-Rebirth](https://github.com/SunnyO8/Star-Rating-Rebirth)**（sunny rework）为基础，经以下方向的修改演化而来：
 
 - **难度分量扩展**：在原始 jack / stream 等分量之外，新增 inverse（密度反转惩罚）、shield（护盾保护）、release（LN 释放交互）等分量，并重写 cross（列间距离加权）。
 - **D(t) 公式重构**：将分量合并方式从线性叠加改为非线性组合（`β1·√S·T^1.5 + β2·S + α·分量` 形式），更贴近实际疲劳叠加规律。
@@ -44,6 +44,18 @@ sr, details = compute_sr_map("chart.osu")
 print(f"SR = {sr:.4f}")
 print(f"D_solved = {details['D_solved']:.2f}")
 ```
+
+## 测试表现
+
+| 指标 | 值 |
+|------|-----|
+| **Loss** | 0.6935 |
+| **MAE** | 0.2068 |
+| **相关性 r** | 0.9889 |
+| **Inside%**（误差在容忍范围内） | 83.3% |
+| **配对 t-test p** | 0.0007 |
+
+相对前版（v0.3.0）改善：Loss −9.9%，统计显著。改善主要来自 RC（rice）与 LN 谱面。
 
 ## 算法架构
 
@@ -100,7 +112,7 @@ D_new(t) = D_calib(t) + correction
 
 | 特征 | 权重 | 物理意义 |
 |------|------|---------|
-| **chord2** | -0.656 | 双押密度（恰好 2 列同时击打的事件占比；v4.0 新增） |
+| **chord2** | -0.656 | 双押密度（恰好 2 列同时击打的事件占比；v0.4.0 新增） |
 | **chord** | -0.769 | 和弦密度（≥4 列同时击打协同减负） |
 | **fj** | +0.031 | Fast jack（同列快打累积疲劳） |
 | hs | +0.073 | 手切（左右手切换协调） |
@@ -108,9 +120,9 @@ D_new(t) = D_calib(t) + correction
 | speed | -0.047 | 速度型模式 |
 | burst | -0.029 | 爆发型模式 |
 | pj | +0.002 | 流 / jack 平衡 |
-| **nps_std** | -0.014 | 密度时变波动（500ms 窗口 NPS 标准差；v4.0 新增） |
+| **nps_std** | -0.014 | 密度时变波动（500ms 窗口 NPS 标准差；v0.4.0 新增） |
 
-**v4.0 新增特征说明**：
+**v0.4.0 新增特征说明**：
 
 - **chord2**（双押密度）：原 `chord` 特征阈值是 ≥4 列，只覆盖大和弦；chord2 覆盖最常见的双押（jumpstream / chordstream），与 chord 互补。双押密度高表示谱面偏向双指同时发力，每指负担比纯 stream 重但 Pbar（全局 NPS）会高估，故负权重补偿。经拆分实验确认：3 音和弦（chord3）无效、4+ 音和弦（chord4p）与原 chord 冗余（相关性 0.955），仅双押有效。
 - **nps_std**（密度时变波动）：将谱面按 500ms 分窗，计算每窗 NPS 标准差。高 nps_std = 爆发段 + 休息段交替（有恢复）；低 nps_std = 全程均匀密度（持续疲劳）。捕捉现有 7 特征缺失的"时变"维度，与 chord2 正交。
@@ -142,7 +154,7 @@ $$D'(t) = 0.893 \cdot D(t) + 0.031$$
 | 文件 | 内容 |
 |------|------|
 | `tuned_params_sigmoid.json` | 主公式参数（分量权重、聚合参数、预校准） |
-| `tuned_correction.json` | 特征修正层权重（v4.0：9 特征 + 4 后处理） |
+| `tuned_correction.json` | 特征修正层权重（v0.4.0：9 特征 + 4 后处理） |
 | `tuned_params_rc.json` | RC 子模型参数 |
 | `tuned_params_ln.json` | LN 子模型参数 |
 
@@ -157,7 +169,7 @@ SPMRating-Z-Release/
 ├── spm_calc.py                      # 模块版计算器（含修正层）
 ├── tune_terminal.py                 # 交互式调参终端
 ├── tuned_params_sigmoid.json        # 最优主公式参数
-├── tuned_correction.json            # ★ 特征修正层权重 (v4.0：9 特征 + 4 后处理)
+├── tuned_correction.json            # ★ 特征修正层权重 (v0.4.0：9 特征 + 4 后处理)
 ├── tuned_params_rc.json             # RC 子模型参数
 ├── tuned_params_ln.json             # LN 子模型参数
 ├── docs/
@@ -194,7 +206,7 @@ SPMRating-Z-Release/
     ├── sweep_k_fine.py              # k 值精细扫描
     ├── rebuild_enhanced_cache.py    # 缓存重建
     ├── build_standalone.py          # 构建独立单文件
-    ├── retrain_correction_zver.py   # v4.0 修正层重训脚本
+    ├── retrain_correction_zver.py   # v0.4.0 修正层重训脚本
     ├── residual_diagnosis.py        # 残差诊断
     └── verify_release.py            # 发布验证
 ```
@@ -258,6 +270,35 @@ SPMRating-Z-Release/
 - **numpy**（必需）
 - **scipy**（仅 Nelder-Mead 调参需要）
 - **pandas**（仅 playtest 评估需要）
+
+## 更新日志
+
+### v0.4.0
+- **特征修正层扩展**：新增 2 个谱面级特征 **nps_std**（密度时变波动）与 **chord2**（双押密度），特征数 7 → 9
+- 经批量特征筛选 + forward selection 确认最优组合；chord2 拆分实验确认仅双押有效（3 音无效、4+ 音与原 chord 冗余）
+- In-sample Loss: 0.770 → **0.694**（−9.9%），配对 t-test p=0.0007
+- MAE: 0.213 → **0.207**
+- 修正层权重与后处理参数联合重训练（5 restarts + 5-fold CV）
+
+### v0.3.0
+- **新增特征修正层**：7 个谱面级特征（speed, burst, chord, pj, hs, lb, fj），L2 正则化线性模型
+- In-sample Loss: 0.932 → **0.770**（-17.4%）
+- CV Test Loss: **0.862**（5-fold, gap=0.092）
+- MAE: 0.218 → **0.213**，相关性: 0.988 → **0.989**
+- 后处理参数与修正层联合重优化
+- 完整调参方法论：`docs/TUNING_CORRECTION_LAYER.md`
+
+### v0.2.0
+- 数据集从 213 扩展到 **311 张**（新增 86 Ranked + 12 Tournament）
+- k 值重新扫描优化：1.5 → **2.09**（粗扫描 + 精细扫描验证）
+- C-γ 自洽性验证：γ ≈ 1/(C+1)，C=3.97, γ=0.196
+- 调参块从 5 块扩展为 **6 块**：新增 B3d (Jack)、B3b/B3c 各新增 2/1 参数
+- RC 子模型重新训练：MAE=0.2366（改善 27%）
+- LN 子模型重新训练：MAE=0.8162（需架构重设计）
+
+### v0.1.0
+- 初始发布：Sigmoid 聚合 (k=1.5, C=4.0, γ=0.20) + 7 分量 D 公式
+- 基于 213 张谱面训练，MAE=0.2253
 
 ## License
 
