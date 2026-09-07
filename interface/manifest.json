@@ -1,0 +1,26 @@
+{
+  "interface_spec_version": "1.0",
+  "algorithm": {
+    "id": "spm-rating",
+    "name": "SPM Rating",
+    "version": "1.0.0",
+    "variant": "main"
+  },
+  "language": "python",
+  "dependencies": ["numpy", "scipy"],
+  "input_types": ["path", "content"],
+  "capabilities": {
+    "star": true,
+    "star_rc": false,
+    "star_ln": false,
+    "sort": false,
+    "tags": false,
+    "curves": false,
+    "performance": true,
+    "extras": ["speed_rate_ignored"]
+  },
+  "notes": {
+    "speed_rate": "本实现仅支持 speed_rate=1.0，传入其他值时仍按 1.0 计算，并在 full 模式 extras 中标记 speed_rate_ignored=true。",
+    "star_rc_star_ln": "RC 与 LN 子分数不在本接口暴露，输出哨兵值 -255。"
+  }
+}

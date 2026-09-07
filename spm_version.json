@@ -1,0 +1,11 @@
+{
+  "algorithm": "spm-rating",
+  "algorithm_display_name": "SPM Rating",
+  "version": "1.0.0",
+  "variant": "main",
+  "base": "sunny-rework",
+  "base_repository": "https://github.com/sunnyxxy/Star-Rating-Rebirth",
+  "interface_spec_version": "1.0",
+  "maintainer": "Ist1na",
+  "repository": "https://github.com/Ist1na07/SPMRating"
+}
