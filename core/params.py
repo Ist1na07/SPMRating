@@ -53,9 +53,25 @@ DEFAULTS: Dict[str, float] = {
     # (0 = off for that frame; c_fj_4k does NOT inherit).
     "c_fj": 0.0,
     "c_fj_4k": 0.0,
+    # RT-8 鲁棒性开关（0/1，手工设置，与 use_cbar_v2 同类，不参与数值优化）。
+    # 见 research/agents/rt8_fj.md。
+    # fj_bounded=1：把无界的快对价格 (1/g)(1-g/0.15) 换成有界线性指示量
+    #   clip(1-g/0.150,0,1) ∈ [0,1]（Roxy inverseGate 形状），去掉 g→0 的
+    #   奇点；值域变了（7K 均值 1.82→0.19），所以 c_fj / c_fj_4k 必须重调
+    #   （7K 1.1224→11.2237，4K 1.6385→11.4694）。0 = 旧行为，逐位不变。
+    "fj_bounded": 0.0,
     # 同手和弦密度折扣曲线，进入 stream 分支。
     "d_sh": 0.0,
     "shd_w": 1000.0,           # ms smoothing window
+    # 手部感知和弦费（A4 双手并行公理）：单手多指紧握（手指牵制）附加费，
+    # 进入 stream 分支（系数 d_hc，0 = 关闭 = 现行行为；hc_e 是超加性指数，
+    # e > 1 保证固定键数下同手集中严格贵于双手分摊，纯跨手和弦不收费）。
+    # 手势尺寸 u_h 来自 note_chord 的按键场（1ms 分裂连续），note_chord=0
+    # 时回退到行级手部 popcount。载体说明：Xbar 列跨距定价手盲且被
+    # t_jack_mix<0 的 twist 门在连打/和弦区归零（CHORD-C G 组实测），
+    # 所以费用走 stream 分支而非 Xbar。
+    "d_hc": 0.0,
+    "hc_e": 1.5,
 
     # minijack: dilution by what else is going on around the jack
     "mj_dilute": 0.0,          # 0 = plain Sunny Jbar
@@ -93,6 +109,42 @@ DEFAULTS: Dict[str, float] = {
     # a 1 ms chord split stops being a full re-pricing.
     # 0 = off (legacy exact-timestamp chords).
     "chord_tau_c": 0.0,
+    # --- CHORD-A v2 (Phase-2, after CHORD-C's adversarial review).
+    # 0 = 完全沿用上面的行级 chord_tau_c 机制（发布行为逐位不变）。
+    # 1 = 按键级"手势"检测 + 手部结构化定价：
+    #   检测 u_h(r) = Σ_{j∈hand h} clip(1-|t_j-t_r|/τ,0,1)   h = L,R
+    #        （HAND 划分：0-2 左、4-6 右、3 拇指只属左手一次——mask&0b0001111；
+    #          行内自己的音符在三角窗内按权重 1 计入，所以孤立单键 u_h=1、
+    #          精确 k 连同手 u_h=k。B1 修复：勿再加 +n_h−1，否则双重计数成 2k−1）
+    #   定价 g = 1 + α·((u_L^P + u_R^P)^(1/P) − 1)，P = γ·q
+    #        （构造性单调、恒 ≥1、同手超加性、双手 p-范数并行、
+    #          g(1,0)=1 与发布表单键价一致）
+    #   SHd 用左右手各自的 u_h（修 CHORD-C R2：v1 用总质量，跨手双押
+    #   白吃同手折扣）；chord2 用 μ(手势尺寸)·wbar 软隶属。
+    # 仅当 chord_tau_c > 0 时生效。
+    "note_chord": 0.0,
+    # 攻击组计数软化（CHORD-C C4）：1 = Jc/Ja 的 nrows 用 Σ(1−w) 连续计数，
+    # 消除 τ 边界悬崖（28→29ms 实测 −0.144★ 阶跃）。0 = 现行 (wb==0) 硬门。
+    # 只在 chord_tau_c > 0 时有意义；两种设置都与 note_chord 正交。
+    "chord_soft_att": 0.0,
+    # 和弦行不做 minijack 稀释（CHORD-C C3：mj_dilute 把和弦行的 Jm 稀释
+    # 21%，导致"加一个同时键更难"公理倒挂）。1 = 和弦行（手势尺寸≥2）
+    # 的稀释因子取 1。0 = 现行（所有行同等稀释）。
+    "chord_no_dilute": 0.0,
+    # chord2 通道在 note_chord=1 下的软隶属开关：0 = 三角软隶属
+    # μ(gsz, wbar)（CHORD-A 默认，消除 size==2 硬门的 ±1ms 分裂）；
+    # 1 = 仍用硬门，但门开在手势尺寸上（消融对照用）。
+    # 实测：软隶属在 ±1ms 抖动下把 T4 逐图 max 中位从 0.104 抬到 0.417，
+    # 因为 μ 随 jitter 直接变化；硬门 0.104 与 legacy 相同。
+    "chord2_hard": 0.0,
+    # g 的四个物理参数（替换 p_chw2..7 六个键；d_sh 由 ga_gam 的同手
+    # 超线性承担，见 BLOCKS.chordg）。
+    #   α 同时性税总刻度（吸收发布表平均校准）
+    #   γ 同手尺寸超线性（手指奴役，γ>1）
+    #   q 双手并行度（q→∞ 纯瓶颈手；q=2 能量式合成）
+    #   pw 整体幂（1 = 物理形式）
+    # α 初值：发布表 (2..7) 均值 ≈ 0.94，同手 2 连 1+2^γ ≈ 2.46
+    "ga_alpha": 0.12, "ga_gam": 1.30, "ga_q": 3.0, "ga_pw": 1.0,
     # short-window burst channel (3/4-note bursts, the `burst` / `lb` feature)
     "p_burst3": 0.0,
     "p_burst4": 0.0,
@@ -296,6 +348,22 @@ DEFAULTS: Dict[str, float] = {
     "d_dt": 1.5,
     "d_b2": 0.3845,
 
+    # ------------------------------------------------- stamina (RT-4)
+    # Non-negative additive fatigue branch: D += c_stam * F, where F is a
+    # causal first-order IIR over the combine-level local intensity S
+    # (F_k = F_{k-1}*exp(-dt_k/stam_tau) + S_k, dt in ms).  Sustained
+    # pressure accumulates and saturates at ~S*tau/dt (~15-30 s with the
+    # default tau); gaps/low-density decay it exponentially (rest).  The
+    # branch is read inside combine() only -- c_stam = 0 (default) is the
+    # legacy model bit-for-bit, and both keys are NON_CURVE.
+    "c_stam": 0.0,
+    "stam_tau": 8000.0,        # ms; fatigue accumulation/decay time constant
+    # ms; anti-split discount on the impulse input: rows closer than
+    # stam_grp to their predecessor (jitter-smeared chords) contribute
+    # x*dt/stam_grp instead of the full x.  Must stay far below real
+    # successive-note gaps (>=50 ms in dense play).
+    "stam_grp": 30.0,
+
     # ----------------------------------------------------------- aggregate
     "agg_mode": 3.0,           # 0 percentile | 1 soft-max | 2 sigmoid | 3 power mean
     "agg_k": 4.0,              # mode1: lambda | mode2: sigmoid k | mode3: power
@@ -304,6 +372,39 @@ DEFAULTS: Dict[str, float] = {
     "agg_nseg": 30.0,
     "agg_wc": 1.0,             # weight exponent on the local note count C
     "agg_gap_w": 1.0,          # weight exponent on the row gap
+    # --- AGG-B (修正幂平均族) 权重来源开关。默认严格保持现行行为。
+    # aggw_src: 0 = 现行 ±500ms 窗音符数 C；1 = 该行自身和弦尺寸 size
+    #           （完全局部、无窗；休息段/空行不存在 → 自然零权重）。
+    "aggw_src": 0.0,
+    # aggw_gap_cap: 毫秒（与 b.t / dt_diff 同单位，非秒）；>0 时把进入
+    #           权重的行间隔 gp 钳到该上限（远处孤立键的 gp 被钳小，
+    #           正常段内 gp 不受影响）。真实 gp：密集流 ~60-130ms，
+    #           p99 ~434ms，max ~11s → 有意义范围约 250-2000ms。
+    #           0 = 关闭 = 现行。
+    "aggw_gap_cap": 0.0,
+    # --- AGG-C/D（段落两级聚合 / 持续需求-容量）专属参数。全部只在
+    # agg_mode=4/5 下被读取，默认严格保持现行模式行为。
+    # 段落切分：静音 >= aggC_gap ms 即开新段落；段内按 aggC_ms 窗口对齐
+    # 到段首；行质量 = C**aggC_wc（永远不含墙钟时间）。
+    "aggC_ms": 3000.0,         # 段内窗口长度 ms
+    "aggC_gap": 1500.0,        # 段落切分静音阈值 ms
+    # --- AGG-D 精炼（P1.5）：按域几何覆盖。键数在整张谱面内一致
+    # （is_4k 逐行恒定），所以这几张谱面既"要么纯4K要么纯7K"，覆盖可按图
+    # 生效：4K 谱面用 aggC_ms_4k / aggC_gap_4k，其余（7K/6K）沿用全局
+    # aggC_ms / aggC_gap。**0 = 继承全局**（不是"窗口 0ms"）——
+    # 0 时解析为全局值，输出与 m4f 逐位相同（见 results/aggD_ref.py）。
+    # 语义：窗口/切段几何是墙钟尺度（ms，同 b.t / dt_diff），只影响
+    # 切段与窗格划分，从不进入权重。
+    "aggC_ms_4k": 0.0,         # 4K 段内窗口长度 ms；0 = 继承 aggC_ms
+    "aggC_gap_4k": 0.0,        # 4K 段落切分静音阈值 ms；0 = 继承 aggC_gap
+    "aggC_pw1": 4.0,           # 窗内幂平均指数
+    "aggC_pw2": 4.0,           # 跨窗幂平均指数（mode 4）
+    "aggC_wc": 1.0,            # 行质量的 C 指数
+    "aggC_gw": 0.0,            # 有界间隔因子指数：min(gp,aggC_gc)**gw。0=关
+    "aggC_gc": 400.0,          # 间隔因子钳位 ms（钳外间隔不再购买权重）
+    "aggC_hw": 1.0,            # 0/1 开关：质量是否含按住因子（不进 NM）
+    "aggC_tau": 4000.0,        # mode 5：疲劳恢复时间常数 ms
+    "aggC_kap": 1.0,           # mode 5：容量（峰值疲劳预算）
     # 聚合前保留峰值的包络：
     # D <- (1-env_w)*D + env_w * rolling_max(D, env_ms).  0 = off.
     "env_w": 0.0,
@@ -375,11 +476,18 @@ BLOCKS: Dict[str, List[str]] = {
     # 是 0/1 手工设置，用于对照实验，不参与数值优化。
     "sat_cbar_v2": [k for k in DEFAULTS if k.startswith("cbv_")],
     "gates": ["use_cbar_v2", "r_soft_edges", "abar_weld", "ln_note_level",
-              "churn_event_rate"] +
+              "churn_event_rate", "fj_bounded"] +
              [k for k in DEFAULTS if k.startswith("use_cbv_")],
     # 和弦耦合参数（密度通道的和弦尺寸、同手折扣项、混合补充项的双押
     # 密度率共用），单独成组，不放在上述通道组里。
     "chordsoft": ["chord_tau_c"],
+    # CHORD-A v2（手势级同时性检测 + 手部结构化定价）专属参数组。
+    # note_chord 是 0/1 开关（手工设置）；note_chord=1 时 p_chw2..7 与 d_sh
+    # 失效，由 ga_* 四参数取代，所以本组同时收 d_sh（其内容以正确符号进
+    # ga_gam 的同手超线性）与 chord_soft_att / chord_no_dilute 两个开关。
+    "chordg": ["note_chord", "chord_tau_c", "ga_alpha", "ga_gam", "ga_q",
+               "ga_pw", "chord_soft_att", "chord_no_dilute", "chord2_hard",
+               "d_sh", "d_hc", "hc_e"],
     "eye": ["d_eye", "d_eye_4k"],
     # cbv_churn / cbv_holdage carry the cbv_ prefix, so they live in the
     # sat_cbar_v2 block automatically; the hb block holds the rest.
@@ -388,7 +496,7 @@ BLOCKS: Dict[str, List[str]] = {
            "chord2_w", "rec_half", "recov_w", "recov_wl"],
     "combine": ["aj", "ap", "at", "cap_a", "cap_b", "c_jm", "c_jc",
                 "c_s", "s_p", "a_p", "a_r", "a_c", "a_cb", "a_cbc",
-                "a_p_4k", "a_r_4k", "a_cb_4k", "d_sh",
+                "a_p_4k", "a_r_4k", "a_cb_4k", "d_sh", "d_hc",
                 "t_jack_mix", "t_s_off", "d_b1", "d_ds", "d_dt", "d_b2"],
     "agg": ["agg_k", "agg_C", "agg_gamma", "agg_wc", "agg_gap_w",
             "p93_c", "w93", "p83_c", "w83", "wmean", "mean_pow",
@@ -396,6 +504,22 @@ BLOCKS: Dict[str, List[str]] = {
     "post": ["pp_n0", "pp_thr", "pp_div", "pp_scale", "calib_a", "calib_b",
              "out_a", "out_b"],
     "affine": ["out_a", "out_b", "calib_a", "calib_b"],
+    # AGG-B（修正幂平均族）专属条目：聚合权重来源开关 + 幂平均/按住参数。
+    # agg_wc 在 aggw_src=1 下是行和弦尺寸的指数（同一符号，两种语义）。
+    "aggB": ["agg_k", "agg_C", "agg_gamma", "agg_wc", "agg_gap_w",
+             "hw_a", "hw_half", "aggw_src", "aggw_gap_cap"],
+    # AGG-C/D（段落两级聚合族）专属条目：段落/窗口几何 + 两级幂指数 +
+    # 质量指数 + mode5 疲劳核。aggC_hw 是 0/1 开关，不参与数值优化。
+    "aggC": ["aggC_ms", "aggC_gap", "aggC_pw1", "aggC_pw2", "aggC_wc",
+             "aggC_gw", "aggC_gc", "aggC_tau", "aggC_kap",
+             "aggC_ms_4k", "aggC_gap_4k"],
+    # AGG-D 精炼专属条目（P1.5）：按域（4K）几何覆盖。单独成组，方便
+    # 只调覆盖而不动全局几何。
+    "aggD4k": ["aggC_ms_4k", "aggC_gap_4k"],
+    # AGG-D 精炼：全局几何微调（不动 4K 覆盖）。
+    "aggDgeo": ["aggC_ms", "aggC_gap"],
+    # RT-4 耐力分支：非负加法疲劳项（combine 内读取，非曲线级）。
+    "stam": ["c_stam", "stam_tau", "stam_grp"],
 }
 
 # Keys whose change forces a structural (per-chart) recompute.  Everything
@@ -478,7 +602,21 @@ NON_CURVE_KEYS: set = set(
      # stream branch), not in compute_curves -- they must NOT trigger a
      # curve recompute.  (use_hb and the *_w / *_sat / *_th / *_cap shape
      # params DO change the curves and stay curve-affecting.)
-     "c_chord2", "d_rec"}
+     "c_chord2", "d_rec",
+     # AGG-B aggregation-only weight-source switches: read exclusively inside
+     # aggregate(), so they must never trigger a curve recompute.
+     "aggw_src", "aggw_gap_cap",
+     # AGG-C/D sectioned-aggregation keys: also read exclusively inside
+     # aggregate() (window partition + two-level mean / demand bisection).
+     "aggC_ms", "aggC_gap", "aggC_pw1", "aggC_pw2", "aggC_wc", "aggC_hw",
+     "aggC_gw", "aggC_gc", "aggC_tau", "aggC_kap",
+     # AGG-D 精炼（P1.5）per-domain geometry overrides: read exclusively
+     # inside _aggc_windows(), so they must never trigger a curve recompute.
+     "aggC_ms_4k", "aggC_gap_4k",
+     # RT-4 stamina branch: c_stam / stam_tau are read exclusively inside
+     # combine() (the IIR runs on the combine-level S), so they must NOT
+     # trigger a curve recompute either -- same precedent as c_chord2/d_rec.
+     "c_stam", "stam_tau", "stam_grp"}
 # NB: use_eye is deliberately NOT here -- it gates EyeR computation inside
 # compute_curves, so it is curve-affecting.
 

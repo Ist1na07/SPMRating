@@ -1,113 +1,143 @@
-# SPM Rating v1.0.0 维护与升级手册
+# SPM Rating v1.1.0 维护与升级手册
 
-本文面向在本仓库内使用与维护算法的读者，内容涵盖：环境搭建，谱面评分的
-日常操作，回归检查，新版本发布流程，以及不应改动的部分。配套文档另有
-两份：[《机制说明》](mechanism.zh-CN.md)阐述算法本身，
-[《研制历程与结论》](history.zh-CN.md)论述前代差异、研制过程与结论。
+> 本手册面向使用、维护与升级 SPM Rating 算法的工程师。
+> 涵盖环境搭建、日常评分接口调用、合规回归检查、发版打包流水线，以及必须严格遵守的工程避坑铁律。
+> 配套文档：[《机制说明》](mechanism.zh-CN.md) 详细阐述算法内部公式，[《研制历程与结论》](history.zh-CN.md) 记录实验依据。
 
-调参工具链（调参脚本、实验记录、验证数据集）随开发仓库维护，不在本仓库
-内。需要重调参数时，请在开发仓库操作；本手册第五节只保留必须遵守的
-结论性原则。
+---
 
-## 1. 环境
+## 1. 环境与依赖
 
-运行环境为 Python 3.10 及以上，依赖只有 numpy 与 scipy 两个库：
+运行环境为 **Python 3.10 及以上版本**。生产部署仅依赖两个科学计算库：
 
-```
+```bash
 pip install -r requirements.txt
 ```
 
-全部命令都以仓库根目录为工作目录。
-
-## 2. 日常评分
-
-单张谱面评分通过标准接口完成，即 interface/python 下的 spm_interface 模块。
-输入可以是谱面文件路径或文本内容，返回星数；失败时返回带错误信息的
-对象，不抛出异常。批量评分走核心管线：解析建批，构建行结构，计算曲线，
-合并聚合，见[《机制说明》第二节](mechanism.zh-CN.md#2-计算管线)。新谱面无需
-特殊处理，解析器会自动嵌入 7 轨道框架；4 键谱面使用独立的输出系数，因为
-两套标注不在同一尺度。
-
-## 3. 回归检查
-
-[tests/cases/](../tests/cases/) 下有十张内置谱面，[tests/expected.json](../tests/expected.json)
-记录每张谱面的预期星数。运行
-
+`requirements.txt` 内容：
 ```
+numpy>=1.23.0
+scipy>=1.9.0
+```
+
+若需执行完整单元测试与代码风格检查，安装开发依赖：
+```bash
+pip install -r requirements-dev.txt
+```
+
+所有工程命令均以仓库根目录为当前工作目录。
+
+---
+
+## 2. 日常评分与对外接口
+
+### 2.1 Python API 调用
+对外公开接口位于 `interface/spm_interface.py`（以及底层单文件自包含引擎 `interface/python/spm_engine.py`）：
+
+```python
+import sys
+sys.path.insert(0, "interface/python")
+import spm_interface as spm
+
+# 方式一：直接指定 .osu 谱面路径
+res = spm.analyze("path/to/chart.osu", input_type="path")
+if res["star"] > 0:
+    print(f"Star Rating: {res['star']:.3f}")
+else:
+    print(f"Rating Failed: {res.get('error')}")
+
+# 方式二：传入谱面文本字符串
+with open("path/to/chart.osu", encoding="utf-8") as f:
+    text = f.read()
+res = spm.analyze(text, input_type="content")
+print(f"Star Rating: {res['star']:.3f}")
+```
+
+### 2.2 接口字段与模式规范
+接口支持 `minimal`（默认）与 `full` 模式，详见 `interface/manifest.json`：
+- `minimal`：返回 `{"schema_version": "1.1", "star": float, "error": str | None}`；
+- `full`：返回包含 `algorithm`, `star`, `star_rc`, `star_ln`, `sort`, `tags`, `curves`, `performance`, `extras` 的全量字典。未计算的细分维度以哨兵值 `-255` 或 `None` 返回。
+
+---
+
+## 3. 回归测试与合规检查
+
+发布前必须确保以下两项测试 100% 通过：
+
+### 3.1 接口合规性检查（5/5 PASS）
+```bash
 python tests/compliance_check.py
 ```
+该脚本执行以下 5 项自动化安全防御检查：
+1. **(a) 独立目录隔离运行**：将 `interface/python/` 复制到临时沙箱，验证单文件引擎无需仓库根目录即可独立运行；
+2. **(b) 全量字段与哨兵守卫**：验证 `full` 模式键集合严格吻合且未实现字段准确赋哨兵值；
+3. **(c) 契约一致性**：验证动态 `capabilities()` 与 `interface/manifest.json` 静态声明完全对齐；
+4. **(d) 内置回归谱面数值守护**：重新计算 `tests/cases/` 下 10 张内置谱面，验证与 `tests/expected.json` 预期星数差异在容差 0.001 内；
+5. **(e) 异常输入防御**：输入损毁谱面或不存在路径时，返回标准错误字典，严禁崩溃抛出未捕获异常。
 
-会用当前代码重算全部谱面并与预期值比对（容差 0.001），同时检查接口在独立
-目录下能否运行、输出字段是否完整、错误输入是否按约定处理，共五项检查，
-全部通过时输出 5/5。测试有两种运行方式：`python -m pytest tests/ -q` 运行
-全部（test_lncoord_v2.py 是长键协调通道的单元测试，test_params_sync.py
-守护引擎内嵌参数与发布参数文件的一致性）；每个测试文件也可独立运行，例如
-`python tests/test_lncoord_v2.py`，此时只需 requirements.txt 的依赖。发布
-前两项检查必须全部通过。仓库在 GitHub Actions 上对 Python 3.10 至 3.13
-自动运行同样的两项检查（见 .github/workflows/ci.yml）；测试依赖在
-requirements-dev.txt 中。
+### 3.2 单元测试与参数同步守卫（13/13 PASS）
+```bash
+python -m pytest tests/ -q
+```
+- 验证 `test_lncoord_v2.py` 长键协调跨列代价计算正确性；
+- 验证 `test_params_sync.py`：**核心安全守卫**，确保 `interface/python/spm_engine.py` 内部固化的参数与 `params/spm-rating-1.1.0.json` 发布的 272 个参数键名、数值及备注文本**绝对一致 (Bit-for-Bit)**。
 
-发布时的已知状态：基准成绩 7 键 0.98449、4 键 0.98535、6 键零样本 0.95796；
-时间戳扰动中位误差 7 键 0.178、4 键 0.039（目标双双低于 0.05，4 键达标，
-7 键如实记录）；四折交叉验证间隙 7 键约 0.001、4 键约 0.0006。扰动与交叉
-验证的检查脚本随开发仓库维护，数字来源与含义见
-[《研制历程与结论》第五节](history.zh-CN.md#5-方法论)。
+---
 
-## 4. 发版流程
+## 4. 发版与引擎打包流水线
 
-参数文件按 spm-rating 加版本号命名。版本号规则：架构或管线变化进主版本，
-机制增删或重调进次版本，纯参数重调进修订号。每次发版同时更新四处：参数
-文件本身的说明字段，[《机制说明》](mechanism.zh-CN.md)中的参数值，
-[《研制历程与结论》](history.zh-CN.md)中的成绩表，以及本手册末尾的版本
-记录。发版提交信息须写明相对上一版的三个数字、机制变化与裁决依据。
+当算法核心 `core/` 或参数发生变更时，严禁手动复制粘贴单文件引擎，必须通过标准流水线重新编译与验证：
 
-## 5. 参数重调的原则
+```mermaid
+flowchart LR
+    A["core/ 源码 + params/ 新参数"] --> B["python experiments/build_engine_bundle.py"]
+    B --> C["生成 interface/python/spm_engine.py"]
+    C --> D["python experiments/verify_bundle.py"]
+    D --> E["数值比对 max diff == 0.0"]
+    E --> F["python tests/generate_expected.py"]
+    F --> G["python tests/compliance_check.py (5/5)"]
+```
 
-重调参数在开发仓库进行，不在本仓库。本节只列出经过验证、必须遵守的原则，
-详细方法与依据见[《研制历程与结论》第五节](history.zh-CN.md#5-方法论)。
+1. **重新组装自包含单文件引擎**：
+   ```powershell
+   python experiments/build_engine_bundle.py
+   ```
+2. **严格数值验证（零误差守卫）**：
+   ```powershell
+   python experiments/verify_bundle.py
+   ```
+   比对单文件引擎与多文件 `core/` 源码在批量测试谱面上的输出差值，**必须满足 `max |diff| = 0.0`**。
+3. **更新测试预期并合规校验**：
+   ```powershell
+   python tests/generate_expected.py
+   python tests/compliance_check.py
+   python -m pytest tests/ -q
+   ```
+4. **版本号同步**：
+   同步更新 `spm_version.json` 中的 `version` 字段。
 
-采纳标准在实验开始前写明：目标函数下降至少四倍于噪声底，两个键数的分数
-均不回退，6 键不回退。只满足分数不满足目标即拒绝；目标平局以 6 键裁决。
+---
 
-共享主干只在两种键数联合的目标上调整，不在单一键数的数据上单独调参。
-6 键标注粗糙且经过预筛，只作零样本裁决，不作训练信号。
+## 5. 调优开发铁律与避坑指南
 
-候选机制走验证阶梯：零假设校准必须包含保平滑的循环移位那一种；再做低成本
-块重拟合检验冗余；最后以同预算联合消融下结论。只在单侧调过参的结果不构成
-证据。
+若后续版本需对机制进行探索或重新调优，必须牢记前任工程师积累的血泪教训：
 
-新机制先做冻结剂量扫描；通过零假设底线后才进入联合调参，联合调参必须有
-同预算的对照组先行。第一轮始终从现版本出发，不从默认值冷启动。影响数据
-结构的参数用网格加内部搜索单独处理，不放在普通参数组里。
+### 5.1 单位量纲陷阱（最致命）
+- `b.t` / `s.t` / `s.dt_ms` / `s.dt_diff`：单位是**毫秒 (ms)**；
+- `s.dt` / `s.duration`：单位是**秒 (s)**；
+- **禁止混用**：混用会将某条通道无意放大或缩小数百倍，伪装成"假性改善"。
 
-## 6. 加新机制的标准流程
+### 5.2 Xbar 是和弦区的死通道
+- 当前最佳参数的 `t_jack_mix = -0.3555`，导致扭曲分子 $Xt = \mathrm{Xbar} + t_{\mathrm{jm}} \cdot Jm$ 在和弦/连打区变为负值；
+- 瞬时难度 $D = d_{b2} \cdot S$ 完全感知不到 Xbar 的变化。**任何与和弦相关的同手牵制或间距阻力，必须走流分支（如 $d_{\mathrm{hc}} \cdot \mathrm{HCd}$ ），严禁寄托于 Xbar**。
 
-先在 core/components 下实现新曲线，只允许行局部的时间序列量，禁止整谱
-统计量——这是本算法的设计原则。然后在参数注册表中加入默认值与分组归属，
-注释写明语义与零值的含义。默认值必须逐位复现旧行为：旧版本号不变，测试
-全部通过。随后执行第五节的验证阶梯。落地后更新三份文档的对应章节；被
-否决的机制同样记录。
+### 5.3 6K 零样本只读铁律
+- 6K 数据集仅用于监控机制泛化。其社区标签颗粒度极粗，噪声边界在 $\pm 0.002$ 左右；
+- **绝对禁止在 6K 上反向调参**，否则会破坏其作为诚实泛化测试域的价值，且极易过拟合粗糙标签。
 
-## 7. 常见错误
+### 5.4 区分曲线参数与非曲线参数
+- **曲线参数（慢，触发 compute_curves 重算）**：`mj_dilute`, `ga_*`, `c_fj`, `hc_e`, `d_hc`, `w_tech` 等，建议网格扫描；
+- **非曲线参数（极快，仅影响 combine/aggregate）**：`c_jm`, `c_jc`, `c_s`, `s_p`, `aggC_*`, `calib_*` 等，可使用 Nelder-Mead (NM) 快速拟合。
 
-重调死参数是最常见的浪费。个别参数模型不会读取，调整之前先做扰动测试，
-曲线差恰为零的即为死参数。零值的语义容易误用：按键数覆盖为零表示继承，
-判定度小于零表示继承，平滑窗小于等于零表示继承；关闭通道应使用门开关或
-权重零，注意区分。含中文的文件出现乱码是第三类常见问题：此类文件一律
-整体重写，不要读改写。
-
-## 8. 不应改动的部分
-
-读谱分支（core/components 里的 read 模块）整体关闭，保留仅为消融对照。
-参数表中以 cb_ 开头的一组旧长键协调系数全部为零，保留仅为消融对照。
-长连合并权重接近零，那是冗余的结论而非调参失败；曲线需保留给锁锚项使用。
-包络权重接近零，基本等于关闭，保留它作为防止窄峰被淹没的退路。结构级开关
-中两个保持为零，筛选未通过，维持旧行为。输出仿射中一组系数在模型中没有
-被读取，属于历史残留，清理时可删除。
-
-## 9. 版本记录
-
-spm-rating-1.0.0：成绩 7 键 0.98449、4 键 0.98535、6 键零样本 0.95796。
-门状态：回归检查通过；扰动检查 7 键未达理想线，已如实记录；6 键通过；
-交叉验证间隙为历代最小。续写时沿用本格式：参数文件、三个数字、变化摘要、
-门状态。
+### 5.5 已锁定的核心决策不可推翻
+- 聚合模式严格锁定为 **mode 4**（两级物量聚合），禁止重试已证伪的 sigmoid 准度二分或疲劳核残差。

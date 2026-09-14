@@ -23,6 +23,27 @@ MANIA_MODE = 3
 # 4K original column -> 7K frame column
 EMBED_4K_TO_7K = (1, 2, 4, 5)
 
+# 6K original column -> 7K frame column.  Default is the historical generic
+# embedding round(c*6/(K-1)) = (0, 1, 2, 4, 5, 6), i.e. the two hands sit in
+# frame {0,1,2} and {4,5,6} with the thumb column 3 empty.  Overriding this
+# table (or the SPM_EMBED_6K environment variable, same format) selects a
+# different physical embedding for 6K without touching 4K/7K parsing.
+EMBED_6K_TO_7K = (0, 1, 2, 4, 5, 6)
+
+
+def embed_6k() -> Tuple[int, ...]:
+    """Active 6K -> 7K embedding (env override wins over the module table)."""
+    raw = os.environ.get("SPM_EMBED_6K")
+    if not raw:
+        return EMBED_6K_TO_7K
+    try:
+        vals = tuple(int(v) for v in raw.replace(" ", "").split(","))
+    except ValueError:
+        return EMBED_6K_TO_7K
+    if len(vals) != 6 or len(set(vals)) != 6 or any(v < 0 or v > 6 for v in vals):
+        return EMBED_6K_TO_7K
+    return vals
+
 # Default OD -> hit window mapping is not used directly; we only need a
 # normalised "timing pressure" scalar.  Standard osu!mania windows (ms):
 OD_WINDOWS = {0: (22.0, 64.0, 97.0, 151.0, 188.0),
@@ -101,6 +122,9 @@ def _col_from_x(x: float, key_count: int) -> int:
         return c
     if key_count == 4:
         return EMBED_4K_TO_7K[c]
+    if key_count == 6:
+        # explicit embedding table (default == the generic round() below)
+        return embed_6k()[c]
     # generic: spread evenly across the 7 tracks
     if key_count <= 1:
         return 3

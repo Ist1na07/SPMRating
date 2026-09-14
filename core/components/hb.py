@@ -82,8 +82,38 @@ def compute_holdage(b, s, p: dict) -> np.ndarray:
 
 
 def compute_chord2(b, s, p: dict) -> np.ndarray:
-    """Double-note row rate (per second)."""
+    """Double-note row rate (per second).
+
+    Legacy path (note_chord == 0): the hard gate `size == 2`, i.e. exactly
+    two notes sharing one timestamp.  A +-1 ms jitter flips a row in and out
+    of that set, which is the most fragile gate in the model (CHORD-C A:
+    split 0 -> 1 ms, Chord2 0.992 -> 0).
+
+    CHORD-A v2 path (note_chord == 1): the same density read off the gesture
+    field through a triangular soft membership
+
+        mu(g) = clip(1 - |g - 2|, 0, 1) * wbar,   g = the row's gesture size
+
+    so mu == 1 exactly for a simultaneous 2-gesture (g = 2, wbar = 1), 1/2 at
+    g = 1.5 / 2.5, 0 beyond [1, 3], and a chord split across rows slides
+    continuously along that ramp instead of dropping out.
+
+    The `wbar` factor is CHORD-C R6: v1 used the neighbourhood-weighted count
+    u, which counts a lone tap sitting 20 ms from a chord as part of it and
+    then discounts the real chord to mu = 0.71.  wbar = (g-1)/(count-1) is
+    the gesture's own simultaneity coherence (1 for one row, 0 for k notes
+    spread over k rows), so mu measures the gesture rather than its
+    neighbourhood.  No new parameter.
+    """
+    from ..model import _row_gesture_cached
     w = max(float(p.get("chord2_w", 1000.0)), 50.0)
+    if p.get("note_chord", 0.0) >= 0.5 and float(p.get("chord_tau_c", 0.0)) > 0.0:
+        gsz, wbar = _row_gesture_cached(b, s, p)[2:4]
+        if p.get("chord2_hard", 0.0) >= 0.5:
+            # gate on the row's own key count, like the legacy `size == 2`
+            return _wmean(s, (np.rint(gsz) == 2.0).astype(np.float64), w)
+        mu = np.clip(1.0 - np.abs(gsz - 2.0), 0.0, 1.0) * np.clip(wbar, 0.0, 1.0)
+        return _wmean(s, mu, w)
     return _wmean(s, (s.size == 2).astype(np.float64), w)
 
 

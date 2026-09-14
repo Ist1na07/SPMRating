@@ -1,4 +1,4 @@
-"""SPM Rating v1.0.0 —— SPM 标准化接口实现（interface_spec_version 1.0）。
+"""SPM Rating v1.1.0 —— SPM 标准化接口实现（interface_spec_version 1.0）。
 
 自包含模块：除 numpy、scipy 外零第三方依赖。将本目录（interface/python/）
 复制到任意空目录后可直接运行。
@@ -29,7 +29,7 @@ _SCHEMA_VERSION = "1.0"
 _ALGORITHM = {
     "id": "spm-rating",
     "name": "SPM Rating",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "variant": "main",
 }
 _CAPABILITIES = {

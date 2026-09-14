@@ -1,405 +1,772 @@
-# SPM Rating v1.0.0 Algorithm Mechanism
+# SPM Rating v1.1.0 Algorithm Mechanism Specification (Full Reproducibility Standard)
 
-This document describes the complete computation of SPM Rating v1.0.0 from chart to star rating, including the formulas and parameter values of each stage. No background in parameter tuning is required; terms are explained where they first appear. Two companion documents exist: the [history document](history.md) covers the differences from predecessor algorithms, the development process, and all findings; the [maintenance guide](maintenance.md) covers day-to-day use and version upgrades. All parameter values cited here are taken from the release parameter file [params/spm-rating-1.0.0.json](../params/spm-rating-1.0.0.json), which contains 248 parameters in total; values in the text are kept to about three significant digits, and the parameter file is authoritative.
+> This document serves as the **exhaustive specification** for SPM Rating v1.1.0. Any developer or researcher can completely reproduce the algorithm from scratch with exact numerical parity (ulp-level consistency) across any programming language solely by following the equations and procedures detailed herein.
+>
+> Single-source-of-truth parameter file: [params/spm-rating-1.1.0.json](../params/spm-rating-1.1.0.json) (272 independent parameters).
+> Accompanying technical reports: [History & Findings](history.md) (evolution and ablation studies from v0.5.0/v1.0.0 to v1.1.0), [Maintenance Guide](maintenance.md) (engineering benchmarks and CI gates).
 
-## Overview
+---
 
-SPM Rating treats a chart as a difficulty curve over time: it first computes the difficulty of each moment, then aggregates the whole curve into a single star rating. The computation has five stages. The first stage parses the chart into a note sequence; the second organizes the notes into a uniform row grid; the third computes a dozen or so difficulty curves, each corresponding to a different hand motion; the fourth merges those curves into one overall difficulty curve; the fifth aggregates the overall curve into a star rating and applies chart-level calibration.
+## Table of Contents
+- [0. Core Design Principles & Notation](#0-core-design-principles--notation)
+- [1. Input Parsing & Geometry Embedding (Parser)](#1-input-parsing--geometry-embedding-parser)
+- [2. Row Grid & Feature Tensor Construction (Grid & Struct)](#2-row-grid--feature-tensor-construction-grid--struct)
+- [3. Hit Leniency & OD Mapping (Leniency)](#3-hit-leniency--od-mapping-leniency)
+- [4. Jack & Repeated Tap Channels: Jm, Jc, Ja (Jacks)](#4-jack--repeated-tap-channels-jm-jc-ja-jacks)
+- [5. Stream & Gesture Chord Pricing Channels: Pbar, Xbar, Abar (Stream)](#5-stream--gesture-chord-pricing-channels-pbar-xbar-abar-stream)
+- [6. Long Note Release Dynamics: Rbar (Release)](#6-long-note-release-dynamics-rbar-release)
+- [7. Long Note Coordination Geometry Matrix: Cbar v2 (LNCoord)](#7-long-note-coordination-geometry-matrix-cbar-v2-lncoord)
+- [8. Biomechanical Constraints & Auxiliary Channels: HCd, SHd, EyeR, Recov](#8-biomechanical-constraints--auxiliary-channels-hcd-shd-eyer-recov)
+- [9. Instantaneous Local Difficulty Synthesis: D(t) (Combine)](#9-instantaneous-local-difficulty-synthesis-dt-combine)
+- [10. Two-Level Mass-Weighted Sectioned Aggregation: agg_mode=4 (Aggregation)](#10-two-level-mass-weighted-sectioned-aggregation-agg_mode4-aggregation)
+- [11. Chart-Level Post-Processing & Calibration (Postprocess)](#11-chart-level-post-processing--calibration-postprocess)
+- [Appendix A: Hand Topology & Anatomical Groups](#appendix-a-hand-topology--anatomical-groups)
+- [Appendix B: Full Release Parameter Manifest (272 Items)](#appendix-b-full-release-parameter-manifest-272-items)
 
-```mermaid
-flowchart LR
-    A["Chart .osu"] --> B["Parse: note table<br/>OD to hit tolerance x"]
-    B --> C["Row grid + cached row arrays<br/>(parameter-free, cached per chart)"]
-    C --> D["Difficulty curves<br/>Jm Jc Ja Pbar Xbar Abar Rbar Cbar EyeR …"]
-    D --> E["Merge: S / T / D"]
-    E --> F["Aggregate + chart-level calibration<br/>→ star rating"]
-```
+---
 
-## 1. Input and Basic Concepts
+## 0. Core Design Principles & Notation
 
-The input is one osu!mania chart, i.e. a sequence of taps and holds; a tap is released as soon as it is pressed, while a hold is kept down for a while before release. Each note has three basic attributes: hit time, column, and (for holds) release time. Internally the algorithm always computes on a 7-column frame; 4-key charts are embedded according to the table below:
+1. **Strict Temporal Causality & Spatial Locality**: Difficulty must originate solely from the local temporal structure of the chart. Global beatmap scalar correction layers are strictly prohibited.
+2. **Section-Level Robustness & Strict Invariance**: The algorithm is mathematically invariant under chart slicing, silent pauses, and section repetition, eliminating rest dilution and repetition inflation.
+3. **Continuity & Perturbation Immunity**: Machine-precision threshold gates (e.g. $10^{-9}\mathrm{s}$) and piecewise-linear sharp cutoffs are abolished. All channels must remain continuously differentiable under $\pm 1\mathrm{ms}$ timing jitter.
+4. **Unified Dimensional Units**:
+   - Timestamps $t$, intervals $\Delta t$, and sliding window spans are stored and computed in **milliseconds (ms)**;
+   - Physical velocities (notes per second) and decay rates use **seconds (s)**, denoted $\delta = \Delta t / 1000$.
 
-| 4-key original column | 0 | 1 | 2 | 3 |
-|---|---|---|---|---|
-| 7-column frame column | 1 | 2 | 4 | 5 |
+---
 
-The remaining columns stay empty. Inter-column physical distances are therefore identical across the two key counts, and the geometry logic can be shared.
+## 1. Input Parsing & Geometry Embedding (Parser)
 
-The following concepts are used throughout.
+### 1.1 `.osu` Parsing
+The parser extracts fields from `[General]`, `[Difficulty]`, and `[HitObjects]`:
+- `Mode`: Must equal `3` (osu!mania);
+- `CircleSize`: Native key count $K_{\mathrm{orig}}$ (4K, 6K, 7K);
+- `OverallDifficulty`: Hit window rating $\mathrm{OD} \in [0.0, 10.0]$;
+- Speed rate scalar $\mathrm{rate}$ ($1.0$ for standard, $1.5$ for DoubleTime).
 
-| Concept | Meaning |
-|---|---|
-| Row | hits sharing a timestamp are merged into a row; notes struck at the same moment form a chord and belong to the same row |
-| Columns and hands | columns are numbered 0 to 6 from left to right; column 3 is the thumb column. The left hand covers columns 0–2, the right hand columns 4–6. Columns are referred to simply as "columns" in the text |
-| Hold count | the number of holds being held down by fingers at a given moment, not yet released |
-| Hit tolerance | a time quantity derived from the chart's overall difficulty setting (OD), written $x$; the smaller the tolerance, the harder a given time interval is |
+Each HitObject yields `(t_raw, c_raw, t_end_raw, is_ln)`:
+- **Native column**: clamped to $[0, K_{\mathrm{orig}}-1]$:
 
-The hit tolerance is the only entry point of OD into the computation, converted in three steps:
+$$
+c_{\mathrm{raw}} = \left\lfloor \frac{x \cdot K_{\mathrm{orig}}}{512} \right\rfloor
+$$
 
-$$q = \frac{64.5 - \lceil 3\,\mathrm{OD} \rceil}{500}, \qquad
-x_0 = 0.3\sqrt{\max(q,\,10^{-6})}, \qquad
-x = \min\!\big(x_0,\ 0.6(x_0 - 0.09) + 0.09\big)$$
+- **Onset time**: $t = t_{\mathrm{raw}} / \mathrm{rate}$ (ms);
+- **Object classification**: If bit 7 of the type field is set (`type & 128`) and end timestamp satisfies `t_end_raw > t_raw`, classified as Long Note (LN) with end timestamp `t_end = t_end_raw / rate` and `is_ln = True`; otherwise, regular tap note with `t_end = t` and `is_ln = False`.
 
-OD 0 through 10 corresponds to $x$ between about 0.101 and 0.079 (in seconds, used on the same scale as intervals). Each curve further takes a power of $x$ with its own response exponent, written $x_f = x^{m_f}$:
+### 1.2 Unified 7-Track Geometry Embedding
+All calculations operate within a canonical **7-column physical frame** (columns $k \in \{0, 1, 2, 3, 4, 5, 6\}$):
+- **7K Native**: Direct mapping $c = c_{\mathrm{raw}}$;
+- **4K Symmetric Embedding**:
 
-| Curve | Response exponent $m_f$ |
-|---|---|
-| Jacks Jm | 0.750 |
-| Density P | 1.126 |
-| Cross-column transitions X | 1.165 |
-| LN release R | 1.064 |
-| Chorded jacks Jc | −0.371 |
-| Long runs Ja | inherits Jm (the channel weight is zero, see Section 3) |
+$$
+\text{4K native } [0, 1, 2, 3] \longrightarrow \text{7-track frame } [1, 2, 4, 5]
+$$
 
-A positive exponent means the channel gets harder as judgment tightens ($x$ shrinks); the negative exponent of Jc means it is nearly insensitive to judgment strictness, with a slight reversal.
+  Columns 0, 3, 6 remain unoccupied; left hand strikes tracks 1 and 2, right hand strikes tracks 4 and 5, leaving center thumb track 3 empty. This preserves exact physical finger distances and cross-hand transitions between 4K and 7K.
+- **6K Embedding**: Maps to $(0, 1, 2, 4, 5, 6)$ with thumb column 3 empty.
 
-## 2. Computation Pipeline
+Objects are sorted in ascending order by $t$, breaking ties by ascending $c$.
 
-Step one, parsing. Read the key list from the chart file to obtain each note's time, column, and hold-tail position, and convert OD into the hit tolerance (formula in Section 1). Notes sharing a timestamp are merged into a row; each row records a column mask, where a set bit means that column has a hit in this row.
+---
 
-Step two, layout. All charts are flattened into large arrays for vectorized computation; this is purely an engineering speedup and does not change the math. For each chart, the program precomputes and caches a set of parameter-independent row-level arrays:
+## 2. Row Grid & Feature Tensor Construction (Grid & Struct)
 
-- the gap from each row to the next;
-- the distance to the next hit in each column;
-- whether each column is active within a ±150 ms window, and the note count within a ±400 ms window;
-- the imbalance of column usage;
-- the number of simultaneously held long notes plus the held-column mask;
-- the note count within a ±500 ms window (written $C$) and the number of active columns;
-- per-column hit chains, per-adjacent-column-pair boundary chains, and per-hold-tail info tables.
+Rather than using event-driven scheduling, charts are projected onto a **Row Grid** of strictly increasing unique timestamps:
 
-Step three, difficulty curves. There are a dozen or so, each a time-varying array, described one by one from the next section on.
+$$
+t_0 < t_1 < \dots < t_{R-1}, \quad r \in [0, R-1]
+$$
 
-Step four, merging. Combine all curves into one overall difficulty value per row.
+- **Row time delta**:
 
-Step five, aggregation and calibration. Aggregate the overall curve into a star rating, then apply chart-level corrections.
+$$
+\Delta t_r = t_{r+1} - t_r \quad (\mathrm{ms}), \quad \Delta t_{R-1} = 0, \quad \delta_r = \frac{\Delta t_r}{1000} \quad (\mathrm{s})
+$$
 
-A basic operation used throughout is **centered smoothing**: the step function $v$ on rows (each row's value holds until the next row) is integrated over a window of $W$ milliseconds and divided by the window width; the window is centered and truncated at chart boundaries:
+- **7-bit column mask**:
 
-$$\bar v(s) = \frac{1}{W}\int_{s - W/2}^{s + W/2} v(t)\,\mathrm{d}t$$
+$$
+\mathrm{mask}_r = \sum_{k \in \mathrm{notes}(r)} 2^k \in [1, 127]
+$$
 
-The smoothing widths per channel are as follows (parameters `w_jm`, `w_p`, etc.):
+- **Row chord size**:
 
-| Channel | Window (ms) |
-|---|---|
-| Jack family J | 843 |
-| Density P | 806 |
-| Cross-column transitions X | 939 |
-| Rhythmic unevenness A | 61 |
-| LN release R | 1349 |
-| LN coordination C | 1140 |
-| Same-hand chord density | 1071 |
+$$
+\mathrm{size}_r = \mathrm{popcount}(\mathrm{mask}_r) \in [1, 7]
+$$
 
-Another mechanism used throughout is **chord coupling**. Chords with exact timestamps split into multiple rows under ±1 ms perturbations, and every quantity priced by row count is distorted. The release enables 28 ms chord coupling (`chord_tau_c = 28`): when the gap $\Delta$ between adjacent rows is below 28 ms, the later row carries a coupling weight toward the earlier one,
+- **Held LN state**: An LN covering $[t_{\mathrm{head}}, t_{\mathrm{tail}}]$ is actively *held* at row $r$ if $t_{\mathrm{head}} < t_r < t_{\mathrm{tail}}$. We record the 7-bit mask $\mathrm{heldmask}_r$ with held count:
 
-$$w = \mathrm{clip}\!\big(1 - \Delta / 28,\ 0,\ 1\big)$$
+$$
+\mathrm{held}_r = \mathrm{popcount}(\mathrm{heldmask}_r)
+$$
 
-A zero gap merges the rows fully into one attack group; at 28 ms they become independent. This weight recurs in Section 3 (jack row counts and same-hand counting) and Section 5 (chord pricing and attack discount); Section 9 summarizes the five smoothing switches that include it.
+- **Local note mass count $C_r$**: Total notes falling within a $\pm 500\mathrm{ms}$ symmetric window centered at $t_r$:
 
-## 3. Jack Channels
+$$
+C_r = \sum_{j: |t_j - t_r| \le 500\mathrm{ms}} \mathrm{size}_j
+$$
 
-The jack channels measure the difficulty of consecutive hits in the same column — the main source of difficulty in jack charts. For each column, the interval $g$ between adjacent hits is computed first (seconds, floored at $10^{-4}$); the base kernel is
+- Active column count $K_{s, r} = 4.0$ for 4K and $7.0$ for 7K.
 
-$$\mathrm{base}(g, x) = \frac{1}{g}\cdot\frac{1}{g + 0.1199\,x^{0.188}}
-\times \Big(1 + 2.27{\times}10^{-5}\,\big(0.154 + |g - 0.074|\big)^{-4}\Big)$$
+---
 
-where $0.188 = 0.750 / 4$ comes from the Jm response exponent combined with the fourth-root shaping (parameters `j_c1`, `od_mult_jm`); the final correction term lifts the kernel by about 4% only near a 74 ms interval and decays rapidly away from it (parameters `j_nerf_*`). Shorter intervals give larger values, as do smaller tolerances. Four channels share this kernel and differ only in their modulation; a fast-jack term is added directly on top.
+## 3. Hit Leniency & OD Mapping (Leniency)
 
-| Channel | Modulation | Merge weight |
-|---|---|---|
-| Raw Jbar | 1 (unmodulated) | does not enter the total difficulty in the release configuration (see Section 6) |
-| Mini-jack Jm | dilution × triplet bonus (below) | 0.514 |
-| Chorded-jack Jc | $(\mathrm{load} / 1.976)^{1.015}$ | 0.133 |
-| Long-run Ja | saturation on same-column run length (below) | −0.0013 |
+Hit window rating $\mathrm{OD}$ maps to timing leniency scalar $x$ (seconds):
+1. Rate-adjusted OD: When $\mathrm{rate} \ne 1.0$, effective OD is adjusted such that hit window divided by rate remains constant, yielding $\mathrm{OD}_{\mathrm{eff}}$ (variable `eff_od`);
+2. Core leniency equations:
 
-The mini-jack dilution factor is $1 / (1 + 0.2368\,\rho^{0.9615})$, where $\rho$ is the number of notes sandwiched between the two hits divided by the number of attack groups: more interleaved notes mean stronger dilution, reflecting the true difficulty of isolated mini-jacks. The triplet bonus is $1 + c_3\,\tau_3$: three consecutive same-column hits with a short enough total span get $\tau_3 = \max(0,\ 1 - \mathrm{span} / 0.272)$, with a gain of $c_3 = 0.019$ for 7-key and $0.536$ for 4-key (parameters `j_triple_gain`, `j_triple_gain_4k`, selected by chart key count).
+$$
+\begin{aligned}
+q &= \frac{64.5 - \lceil 3 \cdot \mathrm{OD}_{\mathrm{eff}} \rceil}{500.0} \\\\
+x_0 &= 0.3 \cdot \sqrt{\max(q, 10^{-6})} \\\\
+x &= \min\big(x_0,\; 0.6 \cdot (x_0 - 0.09) + 0.09\big)
+\end{aligned}
+$$
 
-The chorded-jack $\mathrm{load}$ is the total number of notes sandwiched between the two hits divided by the number of attack groups; thicker chords score higher (parameters `cj_norm`, `cj_size_exp`).
+   For $\mathrm{OD} = 8.0$, $x \approx 0.0834\mathrm{s}$.
+3. **Channel Hit Leniency Transforms**:
+   - Jack channel: $x_{\mathrm{jm}} = x^{0.750426}$ (parameter `od_mult_jm`);
+   - Stream channel: $x_p = x^{1.126485}$ (parameter `od_mult_p`);
+   - Cross channel: $x_x = x^{1.165131}$ (parameter `od_mult_x`);
+   - Release channel: $x_r = x^{1.064324}$ (parameter `od_mult_r`).
 
-The long-run channel applies a saturating weight on same-column run length: longer runs are harder, up to a cap. Its merge weight converged to −0.0013, effectively zero. The channel's own computation is sound, but tuning showed that the long-run and mini-jack channels are highly correlated at row level; a fixed-weight scan is U-shaped with its minimum exactly at zero, 7-key hybrid charts want it positive while LN charts and 4-key charts want it negative, and the two demands cancel. The release keeps computing this curve because the locked-anchor term in Section 6 still uses it, but it no longer feeds the total difficulty directly.
+---
 
-Each channel is first smoothed over 843 ms into per-column curves $C_f$, then averaged across the 7 columns with a power mean of exponent 4.22, weighted by interval reciprocals:
+## 4. Jack & Repeated Tap Channels: Jm, Jc, Ja (Jacks)
 
-$$J_f(s) = \Bigg(\sum_{k=0}^{6} \frac{1}{g_k}\, C_f(s)^{4.22} \Bigg/ \sum_{k=0}^{6} \frac{1}{g_k} \Bigg)^{1/4.22}$$
+Jacks are decomposed into three independent physiological channels:
 
-This channel has two supplementary terms. The **fast-jack term** handles same-column hit pairs with intervals under 150 ms; its shape $f = \frac{1}{g}(1 - g/0.15)$ falls continuously to zero at 150 ms, with a coefficient of 1.12 for 7-key and 1.64 for 4-key, added directly onto the mini-jack channel after smoothing (parameters `c_fj`, `c_fj_4k`). The **same-hand chord density** term handles rows where one hand plays two or more notes: the note counts $u_L$, $u_R$ of the left hand (columns 0–2) and the right hand (columns 4–6) within a ±28 ms triangular window (thumb column excluded), evaluated as $u\,\mathrm{clip}(u - 1,\ 0,\ 1)$, summed and smoothed, enter the stream branch as an independent curve with coefficient −0.189 (parameter `d_sh`) — a discount: same-hand chords subtract from the total difficulty. The direction defies intuition; its meaning is that part of the apparent density of same-hand chords is inflated and needs to be taken back.
+### 4.1 Column Jack Extraction
+For each column $k \in [0, 6]$, extract successive notes $(t_{k, j}, t_{k, j+1})$ with gap $\Delta t_j = t_{k, j+1} - t_{k, j}$ (ms) and $g_j = \Delta t_j / 1000$ (s):
+- Same-column jack kernel:
 
-## 4. Cross-Column Transition Channel
+$$
+\mathrm{kern}_j = \max(g_j, x_{\mathrm{jm}})^{-2.0}
+$$
 
-The cross-column transition channel measures the difficulty of moving fingers between columns. The 7 columns give 7 adjacent boundaries, plus two edge boundaries at the far left and far right (each containing only the edge column's own row chain), 8 in total. Each boundary merges the row chains of its two neighboring columns; every column belongs to exactly two boundaries, so streams in middle columns are always covered — there are no blind spots.
+- **Dilution suppression (A1 Superset Monotonicity Fix)**:
+  Let $\mathrm{other}_j$ denote the notes on other tracks between this pair, and $\mathrm{nrows}_j$ the row count.
 
-```mermaid
-flowchart LR
-    B0(("b0<br/>0.146")) --- C0((0))
-    C0 ---|"b1 0.354"| C1((1))
-    C1 ---|"b2 0.339"| C2((2))
-    C2 ---|"b3 0.049"| C3(("3 thumb"))
-    C3 ---|"b4 0.049"| C4((4))
-    C4 ---|"b5 0.339"| C5((5))
-    C5 ---|"b6 0.354"| C6((6))
-    C6 --- B7(("b7<br/>0.146"))
-```
+$$
+\mathrm{dil}_j = \frac{1.0}{1.0 + 0.080 \cdot \left(\frac{\mathrm{other}_j}{\mathrm{nrows}_j}\right)^{0.9615}}
+$$
 
-Adjacent events within a boundary are priced by inverse squared interval:
+  With parameters `mj_dilute = 0.080` and `mj_dilute_exp = 0.9615`. When a chord is struck simultaneously, parameter `chord_no_dilute = 1.0` overrides $\mathrm{dil}_j = 1.0$, preventing chords from improperly discounting jack costs.
+- **Triple gain**:
+  If a 3-note same-column jack spans $\le 135.97\mathrm{ms}$ (parameter `j_triple_tau`):
 
-$$\mathrm{Xb} = 0.1478 \max(g,\ x^{1.165})^{-2}
-\times
-\begin{cases}
-1 - 0.596\,\Delta & \text{inward (}\Delta > 0\text{)}\\[2pt]
-1 + 0.986\,|\Delta| & \text{outward (}\Delta < 0\text{)}\\[2pt]
-1 & \Delta = 0
+$$
+\mathrm{gain}_j = 1.0 + \gamma_{\mathrm{trip}} \cdot \mathrm{trip}_j, \quad \gamma_{\mathrm{trip}} = 0.0193 \quad (0.5356 \text{ in 4K})
+$$
+
+### 4.2 Three Sub-Channel Formulations
+1. **Minijack ($J_m$)**:
+
+$$
+v_{\mathrm{jm}, j} = \mathrm{kern}_j \cdot \mathrm{dil}_j \cdot \mathrm{gain}_j
+$$
+
+   Fast same-column compensation: $J_m \leftarrow J_m + c_{\mathrm{fj}} \cdot \mathrm{FJ}$ (parameter `c_fj` is $1.1224$, $1.6385$ in 4K).
+2. **Chordjack ($J_c$)**:
+
+$$
+v_{\mathrm{jc}, j} = \mathrm{kern}_j \cdot \left(\frac{\max(\mathrm{load}_j, 10^{-6})}{1.9758}\right)^{1.0152}
+$$
+
+   where parameters are `cj_norm = 1.9758`, `cj_size_exp = 1.0152`.
+3. **Anchor / Long-jack ($J_a$)**:
+
+$$
+\begin{aligned}
+e_j &= \max(\mathrm{runlen}_j + 2.0 - 4.0742,\; 0.0) \\\\
+\mathrm{runf}_j &= \left(\frac{e_j}{e_j + 5.9814}\right)^{1.0048} \\\\
+v_{\mathrm{ja}, j} &= \mathrm{kern}_j \cdot \mathrm{runf}_j \cdot \left(1.0 + \frac{\mathrm{other}_j}{\mathrm{nrows}_j}\right)^{0.6808}
+\end{aligned}
+$$
+
+   where parameters are `ja_norm = 5.9814`, `ja_len_exp = 1.0048`, `ja_len_floor = 4.0742`, `ja_coord_exp = 0.6808`.
+
+### 4.3 Across-Column Power Mean
+Scatter back to rows, smooth with moving-window filter (parameter `w_jm = 842.9ms`), and aggregate across tracks using power mean with exponent $p_{\mathrm{agg}} = 4.2205$ (parameter `j_agg_pow`) with weights $w_j = 1 / g_j$:
+
+$$
+J = \left( \frac{\sum_k w_k \cdot \mathrm{smooth}(v_k)^{p_{\mathrm{agg}}}}{\sum_k w_k} \right)^{1 / p_{\mathrm{agg}}}
+$$
+
+---
+
+## 5. Stream & Gesture Chord Pricing Channels: Pbar, Xbar, Abar (Stream)
+
+### 5.1 Global Flow Density $P_{\mathrm{bar}}$
+Given row delta $\delta_r = \Delta t_r / 1000$:
+1. **Continuous Gesture Windowing**:
+   Within kernel width $\tau_c = 28.0\mathrm{ms}$ (parameter `chord_tau_c`), compute left/right hand triangular-window note mass $u_L, u_R$, yielding continuous effective chord size $u = u_L + u_R$.
+2. **Gesture Chord Pricing**:
+   Parametric size weights for 2-chord through 7-chord:
+
+$$
+\{p_{\mathrm{chw2}}: 0.700,\; p_{\mathrm{chw3}}: 1.471,\; p_{\mathrm{chw4}}: 0.821,\; p_{\mathrm{chw5}}: 0.868,\; p_{\mathrm{chw6}}: 0.747,\; p_{\mathrm{chw7}}: 1.033\}
+$$
+
+   Linearly interpolated at continuous size $u$ to obtain pricing factor $\mathrm{chw}_u$.
+3. **Impulse Intensity**:
+
+$$
+\begin{aligned}
+q &= \min\left(\delta - \frac{x_p}{2.0},\; \frac{x_p}{6.0}\right) \\\\
+f_p &= \left( \max\left( \frac{p_{\mathrm{scale}}}{x_p} \cdot \left(1.0 - \frac{p_{\mathrm{lam3}}}{x_p} \cdot q^2\right),\; 0.0 \right) \right)^{0.25}
+\end{aligned}
+$$
+
+   where parameters are `p_scale = 0.05862`, `p_lam3 = 27.838`.
+4. **Bursts & Row Accumulation**:
+
+$$
+\mathrm{inc} = \frac{1}{\delta} \cdot f_p \cdot \mathrm{chw}_u \cdot \mathrm{mix} + 0.0575 \cdot \mathrm{cnt}_{100} \cdot 10.0 + 0.0416 \cdot \mathrm{cnt}_{150} \cdot 6.6667
+$$
+
+   Smoothed via window filter (parameter `w_p = 806.2ms`) to output $P_{\mathrm{bar}}$, with burst parameters `p_burst3 = 0.0575`, `p_burst4 = 0.0416`.
+
+### 5.2 Alternation & Directional Jump $X_{\mathrm{bar}}$
+1. **Boundary Event Chains & Inward/Outward Split**:
+   Across 8 adjacent track boundaries, movements directed toward the center thumb track (inward) are weighted by parameter `x_din = -0.5959`; movements directed outward are weighted by parameter `x_dout = 0.9859`:
+
+$$
+X_b = x_{\mathrm{amp}} \cdot \max(g, x_x)^{-2.0} \cdot \big(1.0 + x_{\mathrm{din}} \cdot \max(dd, 0) + x_{\mathrm{dout}} \cdot \max(-dd, 0)\big)
+$$
+
+   where amplitude parameter `x_amp = 0.1478`.
+2. **Fast Cross Geometric Coupling**: Coupled adjacent boundary velocities take geometric mean: $\sqrt{\mathrm{fc}_b \cdot \mathrm{fc}_{b+1}}$.
+3. **Geometric Jump Channel**: Incorporates cross-hand multi-column leap term with parameter `x_jump_w = -0.8523`.
+4. Smoothed with window filter (parameter `w_x = 939.3ms`) to form $X_{\mathrm{bar}}$.
+
+### 5.3 Rhythm Irregularity $A_{\mathrm{bar}}$
+1. For adjacent active columns $k_0, k_1$, delta difference $\Delta d = |d_{k0} - d_{k1}|$ and $mx = \max(d_{k0}, d_{k1})$;
+2. **10ms Rhythm Weld & Soft Boundary** (parameter `abar_weld = 1.0`):
+
+$$
+dd = \Delta d + w_{\mathrm{mx}} \cdot \max(0, mx - 0.0886)
+$$
+
+$$
+A_{\mathrm{val}} = \begin{cases}
+\min(c_0 + w_{\mathrm{mx}} \cdot mx,\; 1.0), & dd < 0.0168 \\\\
+\min(c_0 + k \cdot (dd - 0.0168) + w_{\mathrm{mx}} \cdot mx,\; 1.0), & 0.0168 \le dd < 0.0945 \\\\
+1.0, & dd \ge 0.0945
 \end{cases}
-\qquad
-\Delta = \big|e_{\text{from}} - 3\big| - \big|e_{\text{to}} - 3\big|$$
+$$
 
-Inward means the landing column is closer to the thumb column than the starting column; outward means it is farther away. Chord-involved transitions are priced by effective column — when both sides are occupied, the midpoint is used, and the direction correction is naturally halved by the midpoint. Inward moves are discounted and outward moves cost extra. In terms of feel, outward moves toward the pinky side are usually harder than inward moves toward the thumb side, and the parameter directions agree (`x_amp`, `x_din`, `x_dout`).
+   where parameters are $c_0 = 0.7299$, $k = 5.8693$, `thr_lo = 0.0168s`, `thr_hi = 0.0945s`, `abar_mx_w = 0.0716`, `abar_mx_thr = 0.0886`.
+3. Smoothed with window filter (parameter `w_a = 60.79ms`) and scaled by parameter `abar_scale = 1.00986`, producing $A \in [0.65, 1.0]$.
 
-Each boundary has a weight, shared in four groups by mirror symmetry: b1 and b6 (0.354), b2 and b5 (0.339), b3 and b4 (0.049), and the edges b0 and b7 (0.146). The boundaries next to the thumb column carry the lowest weights, matching intuition: transitions involving the thumb are inherently constrained (parameters `x_cw0` through `x_cw3`). Adjacent boundaries also share a fast-transition product term for the compounding effect of consecutive fast transitions, weight 1.663 (parameter `x_fc_w`).
+---
 
-This channel also contains a **geometric jump channel**: a 7×7 transition-cost matrix prices every transition in the global note sequence. Let $d$ be the distance between the two columns; the matrix takes values by case:
+## 6. Long Note Release Dynamics: Rbar (Release)
 
-$$W_{ab} =
-\begin{cases}
-1 + 0.0457\,d^{1.077} & \text{default}\\
-1 + 1.026\,d^{-1.681} & \text{same hand, } d > 0\\
-1 - 0.559 / \max(d, 1) & \text{thumb column involved}\\
-1 - 1.026 \min(d/7,\ 1) & \text{cross hand}
-\end{cases}$$
+### 6.1 Per-Tail Release
+For each LN tail at $t_i$, find next event $t_{\mathrm{next}}$ with $dtr = \max((t_{\mathrm{next}} - t_i)/1000.0,\; dtr_{\min})$, where $dtr_{\min} = 0.015\mathrm{s}$ (15ms):
+- **Base Release Cost**:
 
-A direction factor follows: landings closer to the thumb column (inward direction) multiply by $1 + 0.285$, otherwise by $1 - 0.017$. Each transition's cost is averaged over its row and divided by the row interval, producing a rate-weighted curve; the whole channel enters the transition curve with weight −0.852 (parameters including `x_jump_w`), the negative sign offsetting the jack component double-counted in the paired terms. All of the above is summed and smoothed over 939 ms into the transition channel $\mathrm{Xbar}$.
+$$
+r_v = \frac{r_{\mathrm{tail}}}{\sqrt{dtr}} \cdot x_r^{-1.0} \cdot (1.0 + w_I \cdot I)
+$$
 
-## 5. Density, Rhythmic Unevenness, and LN Release
+  where $r_{\mathrm{tail}} = 0.028985$, and weight parameter $w_I = 1.0611$ (parameter `r_I_w`).
+- **Release Index $I$**:
 
-### Density
+$$
+I = \frac{2.0}{2.0 + \exp\big(-s_I \cdot (|dur - 80|/1000/x - o_I)\big)}
+$$
 
-The density channel measures how many keys must be pressed per unit time. The rate part of each row is
+- **Positive Power Hand Coordination**:
 
-$$\mathrm{inc} = \frac{1}{d}\, f_P\, \mathrm{chw}(u)\, \mathrm{mix}$$
+$$
+r_v \leftarrow r_v \cdot \mathrm{cw}^{e_{\mathrm{coord}} \cdot e_{\mathrm{tt}}}
+$$
 
-where $d$ is the gap to the next row (seconds) and $f_P$ is the fourth-root factor containing the tolerance:
+  where $\mathrm{cw} \in \{0.982 \text{ (same)}, 0.425 \text{ (hand)}, 0.366 \text{ (thumb)}, 0.690 \text{ (cross)}\}$.
+- **Short LN Reduction**: Lines $< 440\mathrm{ms}$ scale down linearly to $0.109$.
+- **Lock Penalty & Straddle AIN Matrix**:
+  Multiplied by $1.0 + r_{\mathrm{lock}} \cdot \mathrm{lock}$ ($r_{\mathrm{lock}} = 0.1775$) and scaled through finger groups `r_ain0` ~ `r_ain3`.
 
-$$f_P = \bigg(\frac{0.0586}{x^{1.126}}\Big(1 - \frac{27.84}{x^{1.126}}\,q^2\Big)\bigg)^{1/4},
-\qquad q = \min\!\big(d - \tfrac{x^{1.126}}{2},\ \tfrac{x^{1.126}}{6}\big)$$
+### 6.2 Tail-to-Tail Sequence
+For consecutive release events:
 
-$\mathrm{chw}(u)$ is the chord-size price table; the price coefficients for chord sizes 2 through 7 are 0.700, 1.471, 0.821, 0.868, 0.747, and 1.033 (parameters `p_chw2` through `p_chw7`). $u$ is not the raw row size but the **effective chord size** within a ±28 ms triangular window: a chord split across several rows keeps close to its full group size, and the price table is linearly interpolated at non-integer sizes. $\mathrm{mix}$ consists of a burst-shape term and an LN-body term. For $r = 7.5/d$ between 186 and 401 a shape function exists,
+$$
+s_v = \frac{r_{\mathrm{seq}}}{\sqrt{dtr}} \cdot x_r^{-1.0} \cdot \big(1.0 + w_I(I_1 + I_2)\big) \cdot \mathrm{cw}^{e_{\mathrm{coord}}}, \quad r_{\mathrm{seq}} = 0.06596
+$$
 
-$$\mathrm{bst}(r) = 1 - 10^{-5}\,(r - 186.3)(r - 401.4)^2$$
+### 6.3 Release-Order Triple
+For three successive same-hand releases in span $\le r_{\mathrm{tau}} = 404.3\mathrm{ms}$:
 
-but the release parameter's shape strength is only of order $10^{-5}$ and the merge applies $\max(\mathrm{bst}, 1)$, so the value is always 1: the shape is neutralized under current parameters and kept only for compatibility. The LN-body term accumulates with hold count and row duration: $v - 1 = 0.00608\,h\,\Delta^{1.005}$, where $h$ is the number of holds being held in this row and $\Delta$ the row interval (milliseconds) — each additional occupied finger and each longer hold adds difficulty (the exponent 1.005 is used as 1). The release takes
-$\mathrm{mix} = (1 - w_b)\max(\mathrm{bst}, 1) + \max(v - 1, 0)$, where $w_b$ is the coupling weight by which the row was absorbed into the previous row: a split chord's sub-rows count only $(1 - w_b)$ new attacks, preventing one chord from being priced as several full attacks. The discount applies to the rate part only; body occupancy is invariant under grid subdivision when summed over rows, and discounting it would move mass onto the wrong sub-row. The rate part ends here: first the column-usage multiplier and a soft clamp (below), then two burst terms added on top — the note counts $C_{100}$, $C_{150}$ within 100 ms and 150 ms windows, coefficients 0.575 and 0.277, giving short bursts extra credit.
+$$
+\mathrm{excess} = \max\Big(|c_1 - c_2| + |c_2 - c_3| - \big(\max(c_1,c_2,c_3) - \min(c_1,c_2,c_3)\big),\; 0.0\Big)
+$$
 
-Two corrections follow the sum. The first is the column-usage multiplier: let $\mathrm{anchor}$ be the imbalance-shape score of the column-usage distribution within a ±800 ms window (roughly 0 to 1; a pyramid shape with one column dominating and usage tapering on both sides scores high, while a uniform distribution and a single column score zero — it specifically captures the "certain columns overused" shape). The multiplier is
+Weighted into release channel with penalty weight `r_order_pen = 0.04983`.
 
-$$m_A = 1 - 0.327 \min\!\big(\mathrm{anchor} - 0.170,\ 6.806\,(\mathrm{anchor} - 0.349)^3\big)$$
+Smoothed with window filter (parameter `w_r = 1349.4ms`) to output $R_{\mathrm{bar}}$.
 
-The higher the imbalance score, the smaller the multiplier: charts over-relying on a few columns lose points. A soft clamp then keeps density values from blowing up: $\mathrm{inc} \leftarrow \min(\mathrm{inc} \cdot m_A,\ \max(\mathrm{inc},\ 2.035\,\mathrm{inc} - 10.69))$.
-Finally an 806 ms smoothing produces the density curve $\mathrm{Pbar}$.
+---
 
-### Rhythmic Unevenness
+## 7. Long Note Coordination Geometry Matrix: Cbar v2 (LNCoord)
 
-Rhythmic unevenness is a pure multiplier, the curve $\mathrm{Abar}$. It examines the difference between the hit intervals of adjacent column pairs: pairs are matched by frame adjacency (0-1, 1-2, up to 5-6), with both columns required to be active within a ±150 ms window; in the 4-key embedding the thumb column is always empty, so the two pairs crossing it drop out automatically. Let $d_0$, $d_1$ be the two columns' intervals to their next hits:
+### 7.1 Anatomical Cross-Column Cost Matrix $M$
+For column pairs $(c_1, c_2)$, lookup cost by biomechanical relation:
+- Same hand adjacent (`sh_adj`): $0.9898$;
+- Same hand split (`sh_split`): $0.6943$;
+- Thumb bridge (`1h_split`): $0.6670$;
+- Cross hand adjacent (`2h_split`): $0.6285$;
+- Cross hand far (`cross`): $0.6384$.
 
-$$dd = |d_0 - d_1| + 0.458 \max(0,\ m_x - 0.106), \qquad m_x = \max(d_0, d_1)$$
+### 7.2 The 7 Geometric Sub-Terms
+1. **Overlap (`cbv_overlap` = 0.9864)**: Concurrently held LNs;
+2. **Shield (`cbv_shield` = 1.1201)**: Taps arriving immediately before LN heads;
+3. **Lockstack (`cbv_lockstack` = 0.5382)**: Same-hand repeated taps during held LNs;
+4. **Lockanchor (`cbv_lockanchor` = 1.3024)**: Long jack runs during held LNs;
+5. **Holdage (`cbv_holdage` = 3.4071)**: Extended duration hold strain;
+6. **Churn (`cbv_churn` = 2.7804)**: Rapid hold/release transitions;
+7. **Holdtap (`cbv_holdtap` = -1.0227)**: High-density stream bursts while holding LNs.
 
-The pair multiplier has three segments (parameters `abar_*`):
+Summed and smoothed with window filter (parameter `w_cb = 1716.9ms`) to produce $C_{\mathrm{bar}}$.
 
-$$\mathrm{val} =
-\begin{cases}
-\min(0.730 + 0.488\,m_x,\ 1) & dd < 0.0168\\[2pt]
-\min(0.730 + 5.869\,(dd - 0.0168) + 0.488\,m_x,\ 1) & 0.0168 \le dd < 0.0945\\[2pt]
-1 & dd \ge 0.0945
-\end{cases}$$
+---
 
-When the interval difference falls below the small threshold (0.0168 s) the multiplier is below 1, approaching 1 as the difference grows. The middle segment is welded (its value at 0.0168 equals the first segment's) so the curve stays continuous at the threshold (`abar_weld` switch, see Section 9). The multipliers of all column pairs are multiplied together, smoothed over 61 ms, and scaled by an overall coefficient of 1.010.
+## 8. Biomechanical Constraints & Auxiliary Channels: HCd, SHd, EyeR, Recov
 
-### LN Release
+### 8.1 A4 Two-Hand Parallelism: Hand Constraint Fee (HCd)
+To eliminate inversion where single-hand 3-chords were computed cheaper than split 2+1 chords:
+1. Compute left-hand mass $u_L$ and right-hand mass $u_R$ with window $\tau_c = 28\mathrm{ms}$;
+2. Apply super-additive exponent (parameter `hc_e = 1.500`):
 
-The LN release channel computes the difficulty of the instant a hold is released, in three parts; the sum is smoothed over 1349 ms into $\mathrm{Rbar}$ and priced in the stream branch as $59.95 / (C + 10.72)$ ($C$ is the ±500 ms local note count, see Section 8).
+$$
+\mathrm{HCd} = \max(0, u_L - 1.0)^{1.5} + \max(0, u_R - 1.0)^{1.5}
+$$
 
-**Part one, per-tail release.** Each hold tail is priced by the gap $\mathrm{dtr}$ to the next event (seconds, 15 ms physical floor) raised to the −1/2 power:
+3. Routed directly into stream with weight $d_{\mathrm{hc}} = 0.400$. Chords requiring $\ge 2$ keys on one hand receive steep super-additive pricing.
 
-$$\mathrm{rv} = 0.0290\,\mathrm{dtr}^{-1/2}\,x^{-1.064}\,(1 + 1.061\,I)
-\times [\text{same column} \to 0.394] \times \mathrm{cw}^{\,e} \times R_{\text{short}} \times S_0 \times (1 + 0.178\,L)$$
+### 8.2 Visual Regularity (EyeR)
+Measures alignment entropy between note timings and uniform subdivisions. Entered as a positive density-gated modifier:
 
-The terms:
+$$
+E_{\mathrm{term}} = d_{\mathrm{eye}} \cdot P_{\mathrm{bar}} \cdot \mathrm{EyeR}, \quad d_{\mathrm{eye}} = 0.08187 \ (\text{4K: } 0.01401)
+$$
 
-- $I$ is the "busyness" of the two ends of the hold, reflecting the interval pressure near its head and tail:
-  $$I = \frac{2}{2 + e^{-3.816\,(I_h - 1.680)} + e^{-3.816\,(I_t - 1.680)}}, \quad
-  I_h = \frac{0.001\,|\mathrm{dur} - 80|}{x^{1.064}},\ \ I_t = \frac{0.001\,|t_{\text{next}} - t_{\text{tail}} - 80|}{x^{1.064}}$$
-  $\mathrm{dur}$ is the hold duration (milliseconds); when no next event exists, $I_t$ is 10.
-- The release exponent $e$ distinguishes whether the next event is a tail or a head: tails take 0.681, heads $0.681 \times 3.542 = 2.411$; when the two events are within 10 ms the exponents blend linearly instead of a hard decision (`r_sim_tau` switch). The same-column head case additionally takes a 0.394 reduction.
-- The coordination weight $\mathrm{cw}$ depends on the relation between the tail column and the next event's column: same column 0.982, same hand 0.425, thumb 0.366, cross hand 0.690.
-- The short-hold reduction $R_{\text{short}} = 0.109 + 0.891 \min(\mathrm{dur}, 440) / 440$: releases of very short holds are barely priced.
-- The locked-hand bonus $L = \sum_j \mathrm{cw}(\text{this column}, j)$, summed over every column $j$ held by other fingers: the more columns held and the closer they are, the harder the release.
-- The finger-independence factor $S_0$: for each held column $j$ a per-finger weight (ring 1.402, middle 0.849, index 0.989, thumb 1.481) is summed, the column's own share is subtracted, and the result enters with coefficient −0.115. The more columns held, the larger the reduction, largest when the thumb is held.
+### 8.3 Recovery Discount (Recov)
+Depresses transient difficulty following dense stamina sections using $d_{\mathrm{rec}} = 0.78125$.
 
-Releases with gaps beyond 5.985 s are not priced, and the outer 20% of the window uses a raised-cosine ramp instead of a hard cutoff (`r_soft_edges` switch); the release mass at truncation is renormalized to the actual time span so that a 1 ms perturbation cannot create difficulty out of nothing.
+---
 
-**Part two, tail-to-tail sequence.** The gap between adjacent hold tails is priced by the same −1/2 power: $0.0660\,\mathrm{dtr}^{-1/2}\,x^{-1.064}\,(1 + 1.061\,(I_i + I_{i+1}))\,\mathrm{cw}^{0.681}$.
+## 9. Instantaneous Local Difficulty Synthesis: D(t) (Combine)
 
-**Part three, release-order triples.** If three holds in different columns of one hand release in a jumping order — the jump measured by how much |c1−c2|+|c2−c3| exceeds the three columns' span (max−min) — a penalty of $0.0498 \times \text{jump} / x^{1.064}$ applies; the judgment window is 404 ms with the same cosine ramp at its edges.
+### 9.1 Branch Non-linear Ceiling
 
-## 6. LN Coordination Channel and Hybrid-LN Supplements
+$$
+\mathrm{branch}(v, \mathrm{mult}) = A^{\mathrm{mult} / K_s} \cdot \min\big(\max(v, 0),\; \mathrm{cap}_a + \mathrm{cap}_b \cdot \max(v, 0)\big)
+$$
 
-The LN coordination channel handles hitting other keys while holds are kept down — the core of locked-hand charts. Which column is being held is the key to locked-hand difficulty, so the channel uses a 7×7 cross-column cost matrix $M$: $L_c = \sum_{j \ne c} M[c, j] \cdot \mathrm{held}_j$
-measures which columns besides this one are held and how close they are — the locked-hand mass used repeatedly below. The matrix is grouped by mirror symmetry into five groups, with a zero diagonal; the release values are as follows (the locked-stack set, parameters `cbv_ls_*`):
+where saturation cutoff parameters are $\mathrm{cap}_a = 10.8467, \; \mathrm{cap}_b = 0.7670$. Saturated branches are computed with exponent parameter $a_j = 3.9808$:
 
-| Group | Column pairs covered | Weight |
-|---|---|---|
-| Same-hand adjacent | (0,1) (1,2) (4,5) (5,6) | 0.990 |
-| Same-hand split | (0,2) (4,6) | 0.694 |
-| Thumb bridge | (1,3) (2,3) (3,4) (3,5) | 0.667 |
-| Cross-hand adjacent | (2,4) | 0.628 |
-| Far cross | (0,4) (0,5) (1,4) (1,5) (2,5) and other cross-hand pairs at distance ≥ 3 | 0.638 |
+### 9.2 Stream Branch
 
-All six sub-terms are enabled, share a 1140 ms smoothing window, and clamp their output at zero.
+$$
+\mathrm{stream} = A^{a_p} \cdot \left( a_p \cdot P_{\mathrm{bar}} + \frac{a_r \cdot R_{\mathrm{bar}}}{C + a_c} + \frac{a_{cb} \cdot C_{\mathrm{bar}}}{C + a_{cbc}} + d_{\mathrm{sh}} \cdot \mathrm{SHd} + d_{\mathrm{hc}} \cdot \mathrm{HCd} + E_{\mathrm{term}} \right)
+$$
 
-**Shield**: a hold head on a column immediately preceded by another note. The preceding note is priced with decay $e^{-\Delta t / 75.3}$ within 256 ms; if the predecessor is a tap its weight is 1, if a hold it is reduced by $1.079\,e^{-\mathrm{dur}/145.4}$ (a hold predecessor already occupies the finger, making the re-strike cheaper); the result is amplified by $(1 + 1.087\,L_c)$ through the other held columns. Channel weight 1.120.
+7K constants: $a_p = 0.4571, a_r = 59.955, a_{cb} = 4.000, a_c = 10.717, a_{cbc} = 10.311$.
+4K overrides: $a_{p, 4\mathrm{K}} = 0.9672, \; a_{r, 4\mathrm{K}} = 0.0, \; a_{cb, 4\mathrm{K}} = 11.357$.
 
-**Straddle jack**: two columns alternating while the column between them is held — the canonical case is columns 0 and 2 alternating with column 1 held. For every pair of columns $(a, b)$ at distance 2:
+### 9.3 Generalized Power Sum $S$
+Using generalized power sum exponent $s_p = 1.1441$ (parameter `s_p`):
 
-$$v = M_{ab} \cdot \sqrt{r_a r_b}\cdot \mathrm{bal}^{1.142} \cdot \mathrm{pin}$$
+$$
+S = \left( c_{\mathrm{jm}} \cdot J_{m, \mathrm{sat}}^{s_p} + c_{\mathrm{jc}} \cdot J_{c, \mathrm{sat}}^{s_p} + c_{\mathrm{ja}} \cdot J_{a, \mathrm{sat}}^{s_p} + c_s \cdot \mathrm{stream}^{s_p} \right)^{1 / s_p}
+$$
 
-$r_a$, $r_b$ are the two columns' usage within a ±400 ms window; $\mathrm{bal} = 2\min(r_a, r_b) / (r_a + r_b)$ measures how balanced the alternation is; $\mathrm{pin} = \sum_m \mathrm{held}_m\, h_{\text{finger}(m)}$ weights the held middle column by finger group, with $h$ of ring 0.879, middle 0.911, index 0.856, thumb 0.503 — hardest when the middle finger is held. Pair-group weights: same-hand split 0.921, thumb bridge 0.532, cross hand 0.175. Channel weight 0.459.
+Weights: $c_{\mathrm{jm}} = 0.4888, c_{\mathrm{jc}} = 0.06036, c_{\mathrm{ja}} = -0.00125, c_s = 0.4116$.
 
-**Locked stack**: each column's jack rate (same shape as the Section 3 jack kernel, computed per column and re-smoothed with this channel's 1140 ms window) times that column's locked-hand mass $L_c^{0.966}$, power-averaged across columns with exponent 4.22, weight 0.538. **Locked anchor**: identical to locked stack, but the jacks first pass a same-column run-length gate (the same saturating shape as the Section 3 long-run channel), weight 1.302. Neither term reuses the aggregated Jbar: the struck columns and the held columns must both be resolved per column, which neither a scalar hold count nor aggregate-then-modulate can do. The raw channel Jbar is therefore still computed but does not enter the total difficulty in the release configuration.
+### 9.4 Twist Factor $T$ and Total Instantaneous $D$
 
-**Overlap jack**: two holds partially overlapping — the earlier one not yet released when the later one is already pressed with interleaved tails (containment, one hold inside the other, is strictly excluded as the cheaper hold-and-tap). The overlap duration is $\min(e_i - t_j,\ 2.451\text{ s})$, multiplied by the overlap matrix: same-hand adjacent 1.227, same-hand split 1.215, thumb bridge 0.891, cross-hand adjacent 0.629, far cross 0.432. Channel weight 0.986.
+$$
+\begin{aligned}
+X_t &= \max(X_{\mathrm{bar}}, 0) + t_{\mathrm{jm}} \cdot J_{m, \mathrm{sat}}, \quad t_{\mathrm{jm}} = -0.3555 \\\\
+T &= A^{a_t / K_s} \cdot \frac{X_t}{X_t + S + 0.4820}, \quad a_t = 5.7043 \\\\
+D(t) &= d_{b1} \cdot S^{d_{\mathrm{ds}}} \cdot \max(T, 10^{-9})^{d_{\mathrm{dt}}} + d_{b2} \cdot S
+\end{aligned}
+$$
 
-**Hold-and-tap**: tapping while holding elsewhere, weight −1.02, priced as the row's note count over the interval times the mean locked-hand mass of the row's notes. After the output clamp it forms a hard selective cancellation: in dense hold cores the locked terms are zeroed, at the edges they survive. The negative sign is not a typo but the repeatedly confirmed optimal shape; every softer reparameterization performed worse.
+Constants: $d_{b1} = 1.4529, d_{b2} = 0.4343, d_{\mathrm{ds}} = 0.5437, d_{\mathrm{dt}} = 1.3838$, and offset `t_s_off = 0.4820`.
 
-### Hybrid-LN Supplements
+---
 
-The four supplements are independent curves and do not pass through the matrix.
+## 10. Two-Level Mass-Weighted Sectioned Aggregation: agg_mode=4 (Aggregation)
 
-**Release crowding**: it measures not the release rate but **how many holds are simultaneously down and about to release**. Each tail leaves a mark on the row grid, time-averaged over a 1023 ms window, giving the number of holds on average in the about-to-release state at time $t$ (typically below 1 for a single-column release stream, about 2 for a two-column tail wall, capped at 7 with all columns stacked). The quantity $r$ then passes a concave saturation:
+### 10.1 Engagement Mass $m_r$
 
-$$\mathrm{curve} = \frac{r}{1 + r / 14.71}$$
+$$
+m_r = \big(\max(C_r, 0)\big)^{1.155} \cdot \min(\Delta t_r,\; 175.549)^{0.966}
+$$
 
-Weight 2.78. The saturation point 14.71 far exceeds $r$'s practical range, so the curve is nearly linear for single-column release streams and only reduces the surcharge when multiple columns form a tail wall — a mild effect under the release parameters. **Hold duration** computes the time holds occupy fingers: for each currently held LN per column, the held duration (seconds, capped at 0.971) minus 0.251, floored at zero, is accumulated — the first 0.25 s is not priced; weight 3.41. Both terms have 4-key override parameters whose release values are near zero, i.e. 4-key inherits the 7-key values; the screening conclusion is that 4-key needs no separate values. **Double-press density rate** is the rate of rows of size exactly 2 (998 ms window), weight 0.5, added directly to the stream branch. **Recovery discount** handles the breather after a burst: the part by which the short-window density (990 ms) exceeds the long-window baseline (21 s), $\max(C_s / C_l - 1,\ 0)$, is smoothed and used as the discount amount, subtracted from the stream branch as $0.781 \times \mathrm{rec} / (\mathrm{rec} + 0.489)$; in uniform streams the two windows read the same and nothing changes.
+Parameters: `aggC_wc = 1.15498`, `aggC_gc = 175.549ms`, `aggC_gw = 0.96625`.
 
-## 7. Visual Regularity Channel
+### 10.2 Sectioning & Sliding Grid
+1. **Silence Reset**: If $\Delta t_r \ge 1854.5\mathrm{ms}$ (parameter `aggC_gap`), reset section boundary. Silent pauses contribute exactly 0 weight;
+2. **Window Framing**: Window length $W_{\mathrm{ms}} = 6902.95\mathrm{ms}$ (~6.9s, parameter `aggC_ms`), stepped across the section.
 
-The visual regularity channel addresses chart readability. For each row, take the log of the interval $\log \Delta t$, subtract the local geometric mean (4000 ms reference window), and fold by octave — the distance to the nearest integer number of octaves:
+### 10.3 Level 1: Intra-Window Mass Power Mean
 
-$$r = (\log \Delta t - \mu) \bmod \log 2, \qquad \mathrm{dist} = \min(r,\ \log 2 - r)$$
+$$
+\begin{aligned}
+M_w &= \sum_{r \in w} m_r \\\\
+d_1[w] &= \left( \frac{\sum_{r \in w} m_r \cdot D_r^{p_1}}{\max(M_w, 10^{-12})} \right)^{1 / p_1}, \quad p_1 = 2.13656
+\end{aligned}
+$$
 
-$\mathrm{dist}$ is smoothed (500 ms) and exponentiated into the alignment
+### 10.4 Level 2: Inter-Window Peak Envelope Bisection
+1. Decay between windows:
 
-$$R(t) = e^{-\mathrm{smooth}(\mathrm{dist}) / 0.2} \in (0, 1]$$
+$$
+\mathrm{DEC}_w = \exp\left(-\frac{\Delta t_{\mathrm{gap}, w}}{\tau}\right), \quad \tau = 4000.57\mathrm{ms}
+$$
+2. Bisection search over $[0, \max(d_1) + 1.0]$ for exactly **26 iterations**. Testing root candidate $\mathrm{mid}$:
 
-Perfectly on-beat rows score 1; rows off by half an octave (triplets against quarters) score markedly lower. The channel enters the stream branch as a density-gated interaction:
+$$
+\begin{aligned}
+F_w &= \max\big(0.0,\; F_{w-1} \cdot \mathrm{DEC}_w + M_w \cdot (d_1[w] - \mathrm{mid})\big) \\\\
+\mathrm{peak} &= \max_w F_w
+\end{aligned}
+$$
 
-$$\text{visual term} = d_{\text{eye}} \cdot \mathrm{Pbar} \cdot R(t)$$
+   Feasible if $\mathrm{peak} \le \kappa$ (convergence threshold parameter `aggC_kap = 0.81587`);
+3. Returns midpoint after 26 iterations as $\mathrm{SR}_{\mathrm{agg}}$.
 
-The 7-key coefficient is $d_{\text{eye}} = 0.082$, 4-key 0.014. The positive sign is the point: on-beat charts are systematically underestimated by the hand model and need extra credit, not a reading discount. The coefficient is small because it only tilts on-beat sections and prices nothing independently.
+---
 
-## 8. Merging, Aggregation, and Calibration
+## 11. Chart-Level Post-Processing & Calibration (Postprocess)
 
-### Merge
+1. **Note Count Normalization** (parameter `pp_n0 = 2.8826`):
 
-The merge stage combines all curves into the total difficulty $D$ per row. The overall structure:
+$$
+\mathrm{SR}_1 = \mathrm{SR}_{\mathrm{agg}} \cdot \frac{N_{\mathrm{notes}}}{N_{\mathrm{notes}} + 2.8826} 
+$$
 
-```mermaid
-flowchart TD
-    JM["Mini-jack Jm"] -->|"A exponent 4.107/Ks × upper clamp"| J1["Three jack channels"]
-    JC["Chorded-jack Jc"] --> J1
-    JA["Long-run Ja"] --> J1
-    PB["Density Pbar"] -->|"A exponent 0.841"| ST["Stream weighted sum"]
-    RB["Release Rbar"] -->|"÷(C+10.72)"| ST
-    CB["LN coordination Cbar"] -->|"÷(C+10.31)"| ST
-    SH["Same-hand discount"] --> ST
-    EY["Visual term"] --> ST
-    ST --> PM["Power mean 1.239"]
-    J1 --> PM
-    PM --> S["Main difficulty S"]
-    S --> TW["Twist ratio T"]
-    XB["Cross-column transitions Xbar"] --> TW
-    JM -->|"×(−0.356)"| TW
-    TW --> D2["D = 1.453·S^0.544·T^1.384 + 0.434·S"]
+2. **High-SR Compression**:
+
+$$
+\mathrm{SR}_2 = \begin{cases}
+\mathrm{SR}_1, & \mathrm{SR}_1 \le 8.3100 \\\\
+8.3100 + \frac{\mathrm{SR}_1 - 8.3100}{1.5281}, & \mathrm{SR}_1 > 8.3100
+\end{cases}
+$$
+
+   where parameters are `pp_thr = 8.3100`, `pp_div = 1.5281`.
+3. **Linear Affine Calibration**:
+
+$$
+\mathrm{SR} = \max\big(0.0,\; \mathrm{SR}_2 \cdot 0.97524 \cdot 0.98747 + 0.77542\big)
+$$
+
+   where parameters are `pp_scale = 0.97524`, `calib_a = 0.98747`, `calib_b = 0.77542`.
+
+Output scalar $\mathrm{SR}$ is the final SPM Rating v1.1.0 Star Rating.
+
+---
+
+## Appendix A: Hand Topology & Anatomical Groups
+
+| 7-Track Column | Finger (7K) | Finger (4K Embedded) | Anatomical AIN Group | Hand Side HAND |
+|---|---|---|---|---|
+| Track 0 | Left Ring | (Empty) | 0 (Ring) | 0 (Left) |
+| Track 1 | Left Middle | Left Middle | 1 (Middle) | 0 (Left) |
+| Track 2 | Left Index | Left Index | 2 (Index) | 0 (Left) |
+| Track 3 | Thumb | (Empty) | 3 (Thumb) | 1 (Thumb) |
+| Track 4 | Right Index | Right Index | 2 (Index) | 2 (Right) |
+| Track 5 | Right Middle | Right Middle | 1 (Middle) | 2 (Right) |
+| Track 6 | Right Ring | (Empty) | 0 (Ring) | 2 (Right) |
+
+---
+
+## Appendix B: Full Release Parameter Manifest (272 Items)
+
+All parameters conform to `params/spm-rating-1.1.0.json`, certified by unit tests:
+
+```json
+{
+  "a_c": 10.717498918905136,
+  "a_cb": 4.0,
+  "a_cb_4k": 11.357365798773392,
+  "a_cbc": 10.310670820602846,
+  "a_p": 0.457050886903945,
+  "a_p_4k": 0.9671708233722217,
+  "a_r": 59.95490931764664,
+  "a_r_4k": 0.0,
+  "abar_active": 0.02531712913365081,
+  "abar_c0": 0.729854838334696,
+  "abar_c1": 0.6730069593477146,
+  "abar_k": 5.869324658227848,
+  "abar_mx": 0.48830826958952744,
+  "abar_mx_thr": 0.10636359112398937,
+  "abar_mx_w": 0.45817570312814426,
+  "abar_scale": 1.009862473386292,
+  "abar_thr_hi": 0.09447563280275387,
+  "abar_thr_lo": 0.01682395583948343,
+  "abar_weld": 1.0,
+  "aggC_gap": 1854.5025717967414,
+  "aggC_gap_4k": 0.0,
+  "aggC_gc": 175.54925904730135,
+  "aggC_gw": 0.9662521390192742,
+  "aggC_hw": 1.0,
+  "aggC_kap": 0.8158674595893058,
+  "aggC_ms": 6902.951638984199,
+  "aggC_ms_4k": 0.0,
+  "aggC_pw1": 2.136557656138545,
+  "aggC_pw2": 5.387422077432465,
+  "aggC_tau": 4000.565712785322,
+  "aggC_wc": 1.1549846294570107,
+  "agg_C": 5.7765188650680015,
+  "agg_gamma": 0.3142734186203886,
+  "agg_gap_w": 1.0873927743990874,
+  "agg_k": 3.923290274033005,
+  "agg_mode": 4.0,
+  "agg_nseg": 30.0,
+  "agg_wc": 1.145022164188944,
+  "aggw_gap_cap": 0.0,
+  "aggw_src": 0.0,
+  "aj": 3.9808431543594054,
+  "an_a0": 0.17043768459177114,
+  "an_a1": 0.34850214310770977,
+  "an_cubic": 6.806495193662656,
+  "an_on_p": -0.3268168035336469,
+  "ap": 0.5424624766238797,
+  "at": 5.704296617075204,
+  "c_chord2": 0.0,
+  "c_fj": 1.1223698076832407,
+  "c_fj_4k": 1.6384853006440867,
+  "c_ja": -0.001250731346377573,
+  "c_jc": 0.06036006771704075,
+  "c_jm": 0.48876747736872084,
+  "c_s": 0.41160107609882524,
+  "calib_a": 0.9874699211242837,
+  "calib_b": 0.7754219268783653,
+  "cap_a": 10.84672199638674,
+  "cap_b": 0.7669642744433789,
+  "cb_holdtap": 0.0,
+  "cb_holdtap_pow": 1.0,
+  "cb_lock_pow": 1.0,
+  "cb_lockanchor": 0.0,
+  "cb_lockjack": 0.0,
+  "cb_par": 0.0,
+  "cb_shield": 0.0,
+  "cb_shield_lock": 0.8062,
+  "cb_shield_tau": 56.24,
+  "cbv_churn": 2.7804415879691047,
+  "cbv_churn_4k": 0.0018149727082640878,
+  "cbv_holdage": 3.4070743387277163,
+  "cbv_holdage_4k": 0.0017655285135421454,
+  "cbv_holdtap": -1.0227403453455164,
+  "cbv_lock_pow": 0.9662307730974806,
+  "cbv_lockanchor": 1.3023578337914123,
+  "cbv_lockstack": 0.5382064568725327,
+  "cbv_ls_1h_split": 0.6669564049783417,
+  "cbv_ls_2h_split": 0.628481439284875,
+  "cbv_ls_cross": 0.6384201937709314,
+  "cbv_ls_sh_adj": 0.9897529278156161,
+  "cbv_ls_sh_split": 0.694320421215397,
+  "cbv_ov_1h_split": 0.8912801595852077,
+  "cbv_ov_2h_split": 0.628660224600841,
+  "cbv_ov_cap": 2451.2427577736403,
+  "cbv_ov_cross": 0.43216200109373926,
+  "cbv_ov_dt_max": 1511.5378347371243,
+  "cbv_ov_sh_adj": 1.2272220519138874,
+  "cbv_ov_sh_split": 1.2153000673016874,
+  "cbv_overlap": 0.9863986916717904,
+  "cbv_sh_dt_max": 256.0406131304308,
+  "cbv_sh_ln_tau": 145.443782024068,
+  "cbv_sh_ln_w": 1.0790072249120857,
+  "cbv_sh_lock": 1.0870780764260457,
+  "cbv_sh_tau": 75.33463318028997,
+  "cbv_shield": 1.1200999548581216,
+  "cbv_str_1h_split": 0.5323308514011785,
+  "cbv_str_2h_split": 0.17479688357773077,
+  "cbv_str_bal": 1.141728630652899,
+  "cbv_str_cross": 0.09922357503493356,
+  "cbv_str_h0": 0.8793037998512705,
+  "cbv_str_h1": 0.9113686383081036,
+  "cbv_str_h2": 0.8557205717895041,
+  "cbv_str_h3": 0.5028456653288493,
+  "cbv_str_maxd": 2.048176307602251,
+  "cbv_str_sh_adj": 0.19036255960279166,
+  "cbv_str_sh_split": 0.9209759560022021,
+  "cbv_straddle": 0.45854924271224995,
+  "cbv_w": 1140.2267181326677,
+  "chord2_hard": 1.0,
+  "chord2_w": 998.3068456460403,
+  "chord_no_dilute": 1.0,
+  "chord_soft_att": 1.0,
+  "chord_tau_c": 28.00006103515625,
+  "churn_event_rate": 0.0,
+  "churn_sat": 14.712127862753169,
+  "churn_w": 1022.5551356347157,
+  "cj_norm": 1.9757525590733565,
+  "cj_size_exp": 1.0152415724691892,
+  "d_b1": 1.4529112152056358,
+  "d_b2": 0.4343400978218659,
+  "d_ds": 0.5436886594030598,
+  "d_dt": 1.3838263378115971,
+  "d_eye": 0.0818717181241305,
+  "d_eye_4k": 0.014013206098578592,
+  "d_hc": 0.4,
+  "d_read": 0.0,
+  "d_read_4k": 0.0,
+  "d_rec": 0.78125,
+  "d_sh": 0.0,
+  "env_ms": 395.28032205483703,
+  "env_w": 0.0033333333333333335,
+  "eye_tau": 0.2,
+  "eye_w_ref": 4000.0,
+  "eye_w_s": 500.0,
+  "ga_alpha": 0.0,
+  "ga_gam": 1.0,
+  "ga_pw": 1.0,
+  "ga_q": 1.0,
+  "hc_e": 1.5,
+  "holdage_cap": 0.9712508526439506,
+  "holdage_th": 0.25073103183213685,
+  "hw_a": -4.833333333333334,
+  "hw_half": 51.932695284873475,
+  "j_agg_pow": 4.220517945172583,
+  "j_c1": 0.11994305455701491,
+  "j_nerf_a": -2.266651862989442e-05,
+  "j_nerf_c": 0.07443739821757173,
+  "j_nerf_off": 0.15369105717534054,
+  "j_triple_gain": 0.01930565188193239,
+  "j_triple_gain_4k": 0.5356436393950172,
+  "j_triple_pow": 1.005976267076746,
+  "j_triple_tau": 135.97491132645644,
+  "ja_coord_exp": -9.268498548764114e-05,
+  "ja_gap_thr": 253.00356478769385,
+  "ja_len_exp": 1.0047596122947928,
+  "ja_len_floor": 4.074244535477681,
+  "ja_norm": 5.981391018054386,
+  "ln_eff_tail_ms": 0.0,
+  "ln_note_level": 0.0,
+  "mean_pow": 6.465267031930503,
+  "mj_dilute": 0.08,
+  "mj_dilute_exp": 0.9615171298692908,
+  "note_chord": 1.0,
+  "od_mult_ja": -1.0,
+  "od_mult_jc": -0.37109374999999944,
+  "od_mult_jm": 0.7504257038347726,
+  "od_mult_p": 1.1264849156945338,
+  "od_mult_r": 1.064323992348447,
+  "od_mult_x": 1.1651306736110387,
+  "out_a": 0.7126068194786057,
+  "out_b": -0.9041441776349508,
+  "p83_c": 2.667686959362696,
+  "p93_c": 2.505172683584436,
+  "p_boost": -1e-05,
+  "p_boost_hi": 401.3793072521453,
+  "p_boost_lo": 186.3466709871835,
+  "p_burst3": 0.05749725160072005,
+  "p_burst4": 0.041571581046874806,
+  "p_bv_max": 1.023169107328028,
+  "p_chw2": 0.6997350782823039,
+  "p_chw3": 1.4710731528472405,
+  "p_chw4": 0.82149995851254,
+  "p_chw5": 0.8676070127257947,
+  "p_chw6": 0.7474127532548505,
+  "p_chw7": 1.03284160083206,
+  "p_lam2": 0.006084380903675146,
+  "p_lam3": 27.838293996532915,
+  "p_sat_a": 10.690152688495372,
+  "p_sat_b": 2.0349325289971496,
+  "p_scale": 0.05862260059258437,
+  "p_v_norm": -0.005007331887365899,
+  "pp_div": 1.5280913205440017,
+  "pp_n0": 2.882604709275971,
+  "pp_scale": 0.9752438292174499,
+  "pp_thr": 8.309978532525944,
+  "r_I_off": 1.679847001293981,
+  "r_I_steep": 3.8155719025104933,
+  "r_I_w": 1.0611113361746765,
+  "r_ain0": 1.402277599248007,
+  "r_ain1": 0.8487725298502042,
+  "r_ain2": 0.9889530992577216,
+  "r_ain3": 1.4808396303580251,
+  "r_coord_e": 0.6807568539174652,
+  "r_cw_cross": 0.6899948287076584,
+  "r_cw_hand": 0.42489506847315023,
+  "r_cw_same": 0.9824539263359018,
+  "r_cw_thumb": 0.3660514384223894,
+  "r_dt_max": 5985.197267885601,
+  "r_dtr_min": 0.015,
+  "r_lock": 0.1775454477373913,
+  "r_order_pen": 0.04982726415201301,
+  "r_order_tau": 404.3308885287425,
+  "r_same_col": 0.39414011153048933,
+  "r_seq": 0.06596340070980779,
+  "r_short_red": 0.10936100877002214,
+  "r_short_thr": 440.09681230961536,
+  "r_sim_tau": 10.0,
+  "r_simul": 0.08534094291675064,
+  "r_soft_edges": 1.0,
+  "r_straddle": -0.11540999412449468,
+  "r_tail": 0.02898542543998874,
+  "r_tt": 3.5417544104085192,
+  "read_clip_hi": 1.5,
+  "read_clip_lo": 0.5,
+  "read_n_win": 16.0,
+  "read_tol": 0.18,
+  "rec_half": 0.4886690846205094,
+  "recov_w": 989.9492044110127,
+  "recov_wl": 21003.231873446508,
+  "s_p": 1.1440878056059884,
+  "shd_w": 1071.1117107781824,
+  "t_jack_mix": -0.35552500051452174,
+  "t_s_off": 0.4819735114526039,
+  "use_cbar_v2": 1.0,
+  "use_cbv_holdtap": 1.0,
+  "use_cbv_lockanchor": 1.0,
+  "use_cbv_lockstack": 1.0,
+  "use_cbv_overlap": 1.0,
+  "use_cbv_shield": 1.0,
+  "use_cbv_straddle": 1.0,
+  "use_eye": 1.0,
+  "use_hb": 1.0,
+  "use_read": 0.0,
+  "w83": 0.4815139944602175,
+  "w93": 0.3605157897072774,
+  "w_a": 60.794584215917084,
+  "w_cb": 1716.856156378797,
+  "w_ja": 0.0,
+  "w_jc": -0.4781249999999999,
+  "w_jm": 842.9060364136417,
+  "w_p": 806.2241563795392,
+  "w_r": 1349.4219390385326,
+  "w_x": 939.2935347185421,
+  "wmean": 2.1613377064577026,
+  "x_amp": 0.14776064699735425,
+  "x_cw0": 0.1460113252705887,
+  "x_cw1": 0.3535388218642357,
+  "x_cw2": 0.3389326726836199,
+  "x_cw3": 0.04918990446028124,
+  "x_din": -0.595854461464495,
+  "x_dir_in": 0.2845860534263308,
+  "x_dir_out": -0.016749922744166222,
+  "x_dout": 0.9858637139438629,
+  "x_fc_a": 0.541953977488367,
+  "x_fc_floor": 0.04577642898224647,
+  "x_fc_off": 60.317605380705,
+  "x_fc_w": 1.6631718126735746,
+  "x_jd_e": 1.0765985987293114,
+  "x_jd_p": 0.0456784859552089,
+  "x_jh_e": 1.6812589290379765,
+  "x_jh_p": 1.0261744953668672,
+  "x_jt": 0.5592172136082718,
+  "x_jump_w": -0.852278272911138
+}
 ```
-
-Before the power mean, the three jack channels and the stream branch are each gated by their Abar exponent, and the jack channels additionally pass an upper clamp:
-
-$$B_f = \mathrm{Abar}^{\,a/K_s} \cdot \min\!\big(\max(f, 0),\ 10.85 + 0.767 \max(f, 0)\big)$$
-
-where $K_s$ is the local active-column count (floored at 1); the exponent $a$ is 4.107 for the jack channels (divided by $K_s$). The clamp flattens the marginal contribution of isolated spikes; the stream branch takes only the Abar power gating, no clamp.
-
-The stream branch is a weighted sum of the density, release, LN coordination, same-hand, and visual terms:
-
-$$\mathrm{stream} = \mathrm{Abar}^{0.841}\Big(
-a_P\,\mathrm{Pbar} + a_R \frac{\mathrm{Rbar}}{C + 10.72} + a_C \frac{\mathrm{Cbar}}{C + 10.31}
-+ d_{sh}\,\mathrm{SHd} + d_{\text{eye}}\,\mathrm{Pbar}\,R(t)\Big) + 0.5\,\mathrm{Chord2} - \text{recovery discount}$$
-
-The five terms inside the parentheses — density, release, coordination, same-hand, and visual — are all first multiplied by the $\mathrm{Abar}^{0.841}$ gate; the double-press density rate and the recovery discount act on the result outside the gate.
-
-The release term is divided by the local note count $C$ plus 10.72 and the coordination term by $C$ plus 10.31: the denser the moment, the smaller the marginal contribution of a single release. The 7-key weights are $a_P = 0.457$, $a_R = 59.95$, $a_C = 4.0$; 4-key has its own density weight 0.967 and coordination weight 11.36, while release inherits the 7-key value (`a_r_4k` at zero means inherit, likewise below).
-
-The three jack channels and the stream branch are combined by a power mean of exponent 1.239 into the main difficulty:
-
-$$S = \Big(0.514\,B_{Jm}^{1.239} + 0.133\,B_{Jc}^{1.239} - 0.0013\,B_{Ja}^{1.239}
-+ 0.418\,\max(\mathrm{stream}, 0)^{1.239}\Big)^{1/1.239}$$
-
-The cross-column transition channel and the main body blend into a twist ratio:
-
-$$T = \mathrm{Abar}^{5.704/K_s} \cdot \frac{X_t}{X_t + S + 0.482},
-\qquad X_t = \mathrm{Xbar} - 0.356\,B_{Jm}$$
-
-$X_t$ mixes in the jack channels' negative coefficient (−0.356): on jack-dominated rows the twist ratio tends to zero and the total difficulty degenerates to the linear term. This is a gate between jack sections and technical sections, not a supplement. The final shape of the total difficulty is
-
-$$D = 1.453\,S^{0.544}\,T^{1.384} + 0.434\,S$$
-
-### Aggregate
-
-The aggregation stage turns the total difficulty curve into one score per chart; the release mode is a weighted power mean (`agg_mode = 3`). A very weak peak envelope is applied first: the difficulty curve's rolling maximum $E$ over a ±198 ms window is taken, and the actual curve becomes $D \leftarrow 0.9967\,D + 0.0033\,E$. The weight is only 0.0033 — essentially off; it is kept so narrow peaks are not drowned by averaging. Each row's weight is
-
-$$w = \mathrm{gp}^{1.087} \cdot C^{1.145} \cdot \Big(1 - 4.833\,\frac{h}{h + 51.9}\Big)$$
-
-$\mathrm{gp}$ is the row half-gap (the mean of the gaps to the previous and next rows), $C$ the local note count, $h$ the held-LN count: one held note lowers the weight to about 91%, seven to about 43% (held rows' weight share drops from 32% to 24%). The final score is
-
-$$\mathrm{SR} = \Big(\sum w\,D^{3.923} \Big/ \sum w\Big)^{1/3.923}$$
-
-### Calibrate
-
-The calibration stage applies chart-level corrections, in order:
-
-$$\mathrm{SR} \times \frac{n}{n + 59.29} \quad\to\quad
-\mathrm{SR} > 7.70 \Rightarrow 7.70 + \frac{\mathrm{SR} - 7.70}{1.618} \quad\to\quad
-\times 1.027 \times 1.002,\ +0.507$$
-
-$n$ is the note count: charts with few notes are discounted, with the knee at about 59 notes; values above 7.70 are compressed; a final linear calibration follows (1.027 and 1.002 are two scale factors multiplied together). 4-key charts have no separate output-side calibration: the scale difference between the two key counts is carried entirely by the per-row overrides described above — the stream weights (`a_p_4k`, `a_cb_4k`) and the jack gains (`j_triple_gain_4k`, `c_fj_4k`) — the only key-count differentiation mechanism.
-
-## 9. Smoothing Switches
-
-The release parameters enable five smoothing switches by default, which remove fake difficulty caused by timestamp discreteness. Take a three-note chord with timestamps 1 ms apart:
-
-```mermaid
-flowchart TD
-    A["One chord, three notes<br/>timestamps 1 ms apart"] -->|"exact splitting"| B["Split into 3 rows"]
-    B --> C1["Same-column jack row counts double<br/>chorded-jack load halves"]
-    B --> C2["LN release gaps take pathological 0–1 ms values"]
-    B --> C3["Chord-size pricing distorted"]
-    A -->|"28 ms chord coupling"| D["Merged into one attack group"]
-    D --> E1["Row counts restored, attack counting correct"]
-    D --> E2["Release gaps apply the 15 ms physical floor"]
-    D --> E3["Judgment exponents blend linearly within ±10 ms"]
-```
-
-The five switches, their thresholds, and where they act:
-
-| Switch | Threshold | Where it acts |
-|---|---|---|
-| Chord coupling `chord_tau_c` | 28 ms | jack row counts, chord pricing, attack discount, same-hand counting |
-| Release gap floor `r_dtr_min` | 15 ms | the $\mathrm{dtr}^{-1/2}$ pricing in the release channel |
-| Judgment blending band `r_sim_tau` | 10 ms | the tail/head decision of the release exponent |
-| Outer cosine ramp `r_soft_edges` | — | both truncation windows of the release channel |
-| Rhythm threshold weld `abar_weld` | — | the middle segment of rhythmic unevenness (already in the Section 5 formula) |
-
-Without these switches, exact-timestamp row splitting double-counts split chords: under ±1 ms perturbations the 7-key correlation falls from 0.984 to 0.488. With them on, the untuned 7-key score drops by about 0.003, yet the unseen 6-key score hits a new high — evidence that what was removed was overfitting to label noise. After retuning with the same budget, perturbation median errors fall to 0.178 (7-key) and 0.039 (4-key), and correlations computed under perturbation (below, "stressed correlations") recover to 0.976 and 0.999. The 7-key median is still above the 0.05 ideal, but further smoothing would require changing the release channel's functional form, and tuning shows that channel genuinely uses this signal — so only a mechanism redesign can fix it, not more parameter tuning.
-
-## 10. Reading the Parameter Table
-
-The release parameter file contains 248 parameters; this text cites only the decisive ones, with [params/spm-rating-1.0.0.json](../params/spm-rating-1.0.0.json) authoritative for exact values. A few parameters sit in off, inherit, or unwired states:
-
-- **Near zero means off**: the long-run channel weight of −0.0013 marks the channel as redundant, its curve kept only for the locked anchor; zero 4-key override parameters (e.g. `a_r_4k`, `cbv_churn_4k`) mean the 7-key value is inherited; the envelope weight of 0.0033 means essentially off. Every "essentially off" parameter in this text is one of these cases.
-- **Branches off by default**: the read-branch (`use_read`) and the four v1 locked terms of LN coordination (`cb_lockjack` etc.) are all zero in the release; v1's role is carried by the Section 6 v2 matrix channel, and the v1 parameters are kept only for compatibility with older parameter files.
-- **Unwired residue**: `out_a` and `out_b` have non-trivial values in the parameter file (0.700, −0.783) but the current post-processing code does not read them; the 4-key output scale is carried by the per-row overrides (Section 8). Do not tune against these two values; the companion `_couple` helper likewise has no call sites. See the [history document](history.md) for the record of dead parameters.

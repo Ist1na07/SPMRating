@@ -21,6 +21,12 @@ K = 7
 N_BOUND = 8
 EPS = 1e-9
 
+# AGG-D (mode 4/5) window-key packing bound.  A section/window key is
+# `sec * _AGG_WIDX` + widx; widx = floor(offset_ms / aggC_ms) stays below
+# ~1e6 for any plausible chart (further bound by the aggC_ms >= 50 ms floor),
+# so a power-of-two offset keeps the product far inside int64.
+_AGG_WIDX = 1 << 22
+
 # popcount lookup for 7-bit row masks
 _POPCOUNT7 = np.array([bin(i).count("1") for i in range(128)], dtype=np.int32)
 
@@ -71,7 +77,7 @@ class Struct:
                  "heldmask", "ln_body_ms", "C", "Ks", "cumsize", "note_row",
                  "note_impulse", "col_chain", "bnd_chain", "tail", "is_4k",
                  "_tail_lo", "_tail_hi", "jlo", "jhi", "_wmean_ops",
-                 "_chord_ops",
+                 "_chord_ops", "_chordn_ops",
                  "n_notes", "duration", "dt_diff", "chart_same", "batch")
 
 
@@ -195,6 +201,216 @@ def _tri_window_count(s: Struct, val: np.ndarray, tau_c: float) -> np.ndarray:
     right = sr - (srt - t * sr) / tau_c
     return np.maximum(
         np.nan_to_num(left + right, nan=0.0, posinf=0.0, neginf=0.0), 0.0)
+
+
+# ------------------------------------------------- key-level simultaneity field
+# CHORD-A (v1.1.0 Phase-2): 按键级同时性质量场。
+#
+# 旧的 chord_tau_c 机制是在**行**上做的：先把相同时间戳的音符合成一行，
+# 再用三角窗对"行"计数。1 毫秒的抖动会把一个和弦拆成两行，行的有效尺寸
+# 就从 k 掉到 1+近邻耦合（u 的跳变 ~1.7%/1ms），定价随之跳变。
+#
+# 这里的机制在**按键**上定义：
+#     m(i) = sum_{j != i} K((t_j - t_i)/tau) * W(col_i, col_j)
+#     u(i) = 1 + m(i)              # 每个音符自己的"蕴含和弦尺寸"
+#     行的 u = 该行各音符 u(i) 的 (均值 | 最大) 聚合
+# 于是"拆成两行"与"合在一行"给出**相同**的 u（极限意义下）：两个音符
+# 相距 s 时，合并行 u=2(1-s/tau)，拆开后 u=(1+w)+(1+w) → 2(1+w)，
+# s→0 时 2(1+w) → 2。因此 SR(split) 在 s=0 处连续，±1ms 不再有硬分裂。
+#
+# 精确和弦（同一时间戳 k 个音符）在这个场里自然得到 u = k，与旧机制的
+# 行为一致；u 连续地覆盖 [1, K]，所以 2-7 押被同一个机制统一处理。
+def _note_kernel(x: np.ndarray, mode: int) -> np.ndarray:
+    """Simultaneity kernel K(x), x = |dt|/tau >= 0 (0 outside |dt| <= tau).
+
+    mode 0 = triangular clip(1-x, 0, 1) -- the same kernel the legacy
+    chord_tau_c path used, so switching mechanisms changes only the
+    row->note mapping.  mode 1 = smoothstep 1 - x^2(3-2x) (C1, steeper
+    core).  mode 2 = raised cosine 0.5(1+cos(pi*x)).
+    """
+    x = np.clip(np.asarray(x, dtype=np.float64), 0.0, 1.0)
+    if mode == 1:
+        return 1.0 - x * x * (3.0 - 2.0 * x)
+    if mode == 2:
+        return 0.5 * (1.0 + np.cos(np.pi * x))
+    return 1.0 - x
+
+
+# ------------------------------------------- gesture field (CHORD-A v2)
+def _row_gesture(b, s: Struct, tau: float) -> tuple:
+    """Gesture (attack-group) simultaneity -- detection layer, hand-split.
+
+    CHORD-A Phase-2 **v2**, after CHORD-C's adversarial review.  v1 summed a
+    pairwise kernel per note into a "per-note effective chord size" u(i) and
+    priced g(u).  Two reviewed facts retired that design:
+
+      R1  with a scalar column weight, aggregating the per-note field back to
+          rows is *pointwise identical* to the legacy row-level triangular
+          window count (measured max|delta| = 7e-9).  A sum of pairwise
+          kernels is not an attack-group partition, so it carries no new
+          information -- and pricing every row of a split chord at the full
+          group size double-counts the gesture.
+      C5  pricing a bare note count is hand-blind: it cannot express the most
+          basic two-hand fact (a single-hand stack is worse than the same
+          notes split across the hands).
+
+    v2 therefore separates detection from pricing.
+
+    Detection (this function): a row's gesture is its own notes plus the
+    notes of rows within tau, each weighted by the triangular kernel
+    clip(1-|dt|/tau, 0, 1), summed per hand over the HAND partition
+    (cols 0-2 + thumb 3 = left, 4-6 = right):
+
+        u_h(r) = sum_{j in hand h} K(|t_j - t_r|/tau)          h = L, R
+
+    so u_h is 1 for a lone note of that hand and k for an exact k-stack, and
+    slides continuously in between (this is the ±1 ms continuity requirement:
+    a chord split across two rows keeps u_L/u_R at their window-weighted
+    values instead of jumping).
+
+    Pricing (see `_chord_g`): g = 1 + alpha*((u_L^P + u_R^P)^(1/P) - 1),
+    P = gamma*q -- constructive: >= 1 always, superset-monotone, single-hand
+    superadditive (gamma > 1), two-hand subadditive (p-norm), and exactly 1
+    for an isolated single.
+
+    Returns (u_l, u_r, gsz, wbar, wb_row):
+      u_l/u_r  per-row hand gesture sizes, u_h = w_h + (n_h - 1), continuous
+               through the row seam
+      gsz      per-row gesture size = u_l + u_r, i.e. the row's keys plus the
+               same-hand neighbours' kernel weights
+      wbar     per-row gesture coherence = (gsz - 1)/(own keys - 1): 1 for a
+               one-row gesture, 0 for k keys spread over k rows (3 keys over
+               3 rows are still 3 keys, but not one simultaneous gesture)
+      wb_row   backward attack weight, computed exactly as the legacy
+               `_chord_coupling` does (CHORD-C R3: the v1 code passed an
+               always-true row mask here and degenerated to the per-row d,
+               re-introducing a 1 ms discontinuity).
+    """
+    n = s.n
+    u_l = np.ones(n, dtype=np.float64)
+    u_r = np.ones(n, dtype=np.float64)
+    gsz = np.ones(n, dtype=np.float64)
+    wbar = np.ones(n, dtype=np.float64)
+    wb_row = np.zeros(n, dtype=np.float64)
+    npop = b.note_t.size
+    if npop == 0 or tau <= 0.0:
+        return u_l, u_r, gsz, wbar, wb_row
+
+    nchart = b.note_chart.astype(np.int64)
+    # Global note axis.  Chart-local times restart at 0, so they are not
+    # globally sorted.  The offset must (a) exceed the longest chart and
+    # (b) stay small enough that float64 keeps millisecond resolution --
+    # a 1e7 ms stride is exactly at the double-precision edge and destroys
+    # the field on later charts (measured: chart 0 fine, chart 1 empty).
+    # 5e5 ms = 8.3 min per chart, int64-exact and far beyond any real chart.
+    stride = 500000
+    gt = (b.note_t.astype(np.int64)
+          + stride * nchart).astype(np.float64)
+    # s.starts is already the per-chart row start (indexed by chart id), so
+    # the global row of a note is simply starts[chart] + local row.  (The
+    # earlier `repeat(starts, counts)` rebuild triple-counted each start.)
+    r = s.starts[nchart] + b.note_row
+
+    # u_h(r) = w_h(r), where
+    #   w_h(r) = triangular +-tau window count of hand h's key presses at row r
+    #            (includes the row itself, each key weighted 1 at distance 0).
+    # So a lone key of a hand gives u_h = 1, an exact k-stack gives u_h = k,
+    # and a gesture spread over adjacent rows keeps its window-weighted size.
+    # (B1 fix, CHORD-C final review: the row's own keys are already counted at
+    # weight 1 inside the triangular window, so an extra "+ n_h - 1" term would
+    # double-count them -- an exact same-hand k-stack read 2k-1 and a split
+    # cross-hand gesture read gsz=1, invisible to the chord2 gate.)
+    msk = s.mask.astype(np.int32)
+    left = _POPCOUNT7[msk & 0b0001111].astype(np.float64)
+    right = _POPCOUNT7[msk & 0b1110000].astype(np.float64)
+    u_l = _tri_window_count(s, left, tau)
+    u_r = _tri_window_count(s, right, tau)
+    u_l = np.maximum(u_l, 0.0)
+    u_r = np.maximum(u_r, 0.0)
+    gsz = u_l + u_r
+
+    # integer note count per row -> mean pair weight: gsz - 1 is
+    # sum of kernel weights over the OTHER notes, so dividing by count - 1
+    # gives the average weight of a pair (1 = one simultaneous row).
+    ncnt = np.maximum(np.bincount(r, minlength=n).astype(np.float64), 1.0)
+    wbar = np.where(ncnt > 1.0,
+                    np.maximum(gsz - 1.0, 0.0) / np.maximum(ncnt - 1.0, 1e-12),
+                    1.0)
+    wbar = np.clip(wbar, 0.0, 1.0)
+
+    # attack mask: a note is a new attack iff nothing in the PREVIOUS row
+    # couples to it (legacy `wb == 0`) -- note_row is non-decreasing, so
+    # first-of-row is exactly that test.
+    first = np.zeros(npop, dtype=bool)
+    first[0] = True
+    first[1:] = b.note_row[1:] != b.note_row[:-1]
+    first_row = np.zeros(n, dtype=bool)
+    first_row[r[first]] = True
+    cur = np.zeros(n, dtype=np.int64)          # row's first note index
+    cur[r[first]] = np.flatnonzero(first)
+    prev = np.zeros(n, dtype=np.int64)         # previous row's first note
+    prev[1:] = cur[:-1]
+    has_prev = np.zeros(n, dtype=bool)         # False on each chart's first row
+    has_prev[1:] = np.diff(nchart[cur]) == 0
+    gap = np.abs(gt[cur] - gt[prev])
+    wb_row = np.where(has_prev & first_row,
+                      np.clip(1.0 - gap / tau, 0.0, 1.0), 0.0)
+    return u_l, u_r, gsz, wbar, wb_row
+
+
+def _row_gesture_cached(b, s: Struct, p: dict) -> tuple:
+    """Memoised `_row_gesture` on the struct (same pattern as `_chord_ops`).
+
+    Only tau enters: the hand split is structural (the column masks), so the
+    pricing parameters gc_*/ga_* never invalidate this cache.
+    """
+    key = round(float(p["chord_tau_c"]), 6)
+    ops = getattr(s, "_chordn_ops", None)
+    if ops is None:
+        ops = {}
+        s._chordn_ops = ops
+    got = ops.get(key)
+    if got is None:
+        got = _row_gesture(b, s, key)
+        if len(ops) > 8:
+            ops.clear()
+        ops[key] = got
+    return got
+
+
+def _chord_g(u_l: np.ndarray, u_r: np.ndarray, p: dict) -> np.ndarray:
+    """Hand-structured, constructive-monotone chord price (note_chord == 1).
+
+        g(u_L, u_R) = 1 + alpha * ((u_L**P + u_R**P)**(1/P) - 1),  P = gamma*q
+
+    Replaces the p_chw2..7 table (6 free keys) AND the d_sh same-hand
+    discount curve with 4 physical parameters:
+
+      alpha  simultaneity-tax scale (absorbs the table's average calibration)
+      gamma  single-hand size superlinearity, gamma >= 1 (finger enslavement:
+             the marginal finger of a stack costs more than the first)
+      q      two-hand parallelism, q >= 1 (q -> inf = pure bottleneck hand;
+             q = 2 = energy-style combination)
+      pw     optional flat exponent on the whole count, 1 = the physical form
+
+    Constructive guarantees (CHORD-C §1.2):
+      A1 superset monotone -- alpha, gamma, q, pw > 0 => dg/du_h >= 0;
+      A4 two-hand parallel  -- g(2,0) = 1+alpha*2**gamma  >  g(1,1)
+                               = 1+alpha*2**(1/P)  for gamma > 1/P;
+      non-negative and >= 1 everywhere (the released table is not: u >= 5.5
+      is priced negative by an unconstrained quadratic);
+      g(1,0) = 1 exactly -- an isolated single keeps the released single price,
+      so the family is calibration-compatible with the m4f baseline.
+    """
+    al = float(p.get("ga_alpha", 0.12))
+    ga = max(float(p.get("ga_gam", 1.30)), 1e-3)
+    q = max(float(p.get("ga_q", 3.0)), 1.0)
+    pw = max(float(p.get("ga_pw", 1.0)), 1e-3)
+    ul = np.maximum(np.asarray(u_l, dtype=np.float64), 0.0)
+    ur = np.maximum(np.asarray(u_r, dtype=np.float64), 0.0)
+    P = max(ga * q, 1e-3)
+    lam = np.power(np.power(ul, P) + np.power(ur, P), 1.0 / P)
+    return 1.0 + al * np.power(np.maximum(lam - 1.0, 0.0), pw)
 
 
 def _edge_ramp(x, cutoff) -> np.ndarray:
@@ -476,10 +692,35 @@ def build_jack_stats(b, s: Struct, p: dict) -> list:
     # 之间的行数翻倍，双押叠通道的负载也不再减半。
     tau_c = float(p.get("chord_tau_c", 0.0))
     att_cum = None
+    att_row = None
     if tau_c > 0.0:
         wf, wb = _chord_coupling(s, tau_c)
-        att_cum = np.concatenate(
-            ([0.0], np.cumsum((wb == 0.0).astype(np.float64))))
+        if p.get("chord_soft_att", 0.0) >= 0.5:
+            # CHORD-C C4: the attack-group counter `(wb == 0)` is a HARD gate.
+            # Raising tau past a row gap moves that row from "absorbed" to
+            # "new attack" in one step -- measured as a -0.144* cliff at
+            # 28 -> 29 ms (nrows doubles, load halves).  Count each row by
+            # how much of an attack it actually is, 1 - w, which is exactly
+            # 1 at wb == 0 and 0 for a fully absorbed row, so the cliff
+            # becomes a continuous ramp.  NOTE: att_row = 1 - wb, NOT the
+            # wb of `_row_gesture` (which is already 1 - w) -- same quantity,
+            # different convention.
+            att_row = 1.0 - wb
+        else:
+            att_cum = np.concatenate(
+                ([0.0], np.cumsum((wb == 0.0).astype(np.float64))))
+    att_soft_cum = (None if att_row is None else
+                    np.concatenate(([0.0], np.cumsum(att_row))))
+    # CHORD-C C3 (A1 superset monotonicity): mj_dilute divides the minijack
+    # channel by the chord load on the row (other/nrows), so ADDING a
+    # simultaneous key to a jack row LOWERS that row's Jm -- measured 21% on
+    # a 2-chord stream, which is what makes a 2-chord stream score below a
+    # single-note stream at equal rate.  When chord_no_dilute is on, rows
+    # that carry a real gesture (>= 2 notes, from the chord field) skip the
+    # dilution.  Requires note_chord; 0 = legacy.
+    chord_row = None
+    if p.get("chord_no_dilute", 0.0) >= 0.5 and p.get("note_chord", 0.0) >= 0.5:
+        chord_row = _row_gesture_cached(b, s, p)[2] >= 2.0
     # 同列三连增益按谱面键数分别取值：7 键与 4 键各一个系数，
     # 4 键系数小于 0 时表示沿用 7 键的值。
     g7 = float(p["j_triple_gain"])
@@ -498,6 +739,9 @@ def build_jack_stats(b, s: Struct, p: dict) -> list:
         gs = np.maximum(np.where(valid, g, 1.0), 1e-4)
         if att_cum is not None:
             nrows = np.maximum(att_cum[pos[1:]] - att_cum[pos[:-1]], 1.0)
+        elif att_soft_cum is not None:
+            nrows = np.maximum(att_soft_cum[pos[1:]] - att_soft_cum[pos[:-1]],
+                               1.0)
         else:
             nrows = np.maximum(pos[1:] - pos[:-1], 1).astype(np.float64)
         total = s.cumsize[pos[1:]] - s.cumsize[pos[:-1]]
@@ -515,14 +759,33 @@ def build_jack_stats(b, s: Struct, p: dict) -> list:
             trip[:-1] = np.where(
                 same3, np.maximum(0.0, 1.0 - span_s / (2.0 * h3_tau)), 0.0)
         # fast same-column (fj): pairs with gap < 150 ms priced (1/g)(1-g/0.15)
+        #
+        # RT-8 (robustness): the legacy price is UNBOUNDED as g -> 0 -- a pair
+        # 1 ms apart is priced ~1000x a 100 ms pair, so any pair at (almost)
+        # an identical timestamp -- real charts do contain them: 2 ms in 4K
+        # bm4k_0261, 1 ms in six 6K charts -- is a ~5*10^2..10^3 spike in a
+        # channel whose typical value is O(1), and it stays a spike under any
+        # sub-millisecond perturbation.  fj_bounded=1 replaces the hyperbolic
+        # price with the bounded linear indicator
+        #     clip(1 - gs/0.150, 0, 1)                     (Roxy's inverseGate)
+        # -- the same shape ordering in gs, no singularity, range [0,1].  The
+        # value range changes (mean 1.82 -> 0.19 on 7K), so c_fj / c_fj_4k
+        # must be refitted for it (7K 1.1224 -> 11.2237, 4K 1.6385 -> 11.4694;
+        # see research/agents/rt8_fj.md).  0 = legacy, bit-identical.
         cid_gap = c["cid"][:-1]
-        fj = np.where(same_step & (gs < 0.150),
-                      (1.0 / gs) * np.maximum(1.0 - gs / 0.150, 0.0), 0.0)
+        if p.get("fj_bounded", 0.0) >= 0.5:
+            fj = np.where(same_step & (gs < 0.150),
+                          np.clip(1.0 - gs / 0.150, 0.0, 1.0), 0.0)
+        else:
+            fj = np.where(same_step & (gs < 0.150),
+                          (1.0 / gs) * np.maximum(1.0 - gs / 0.150, 0.0), 0.0)
         # per-gap triple gain by frame
         tgain = np.where(is4k_chart[cid_gap], g4k, g7)
         stats.append(dict(pos=pos, gs=gs, valid=valid, nrows=nrows,
                           other=other, load=total / nrows, runlen=runlen,
                           trip=trip, tgain=tgain, fj=fj, xr=xrow[pos[:-1]],
+                          chord_row=(None if chord_row is None
+                                     else chord_row[pos[:-1]]),
                           kern=_jack_kernel(gs, xrow[pos[:-1]], p,
                                             float(p["od_mult_jm"]))))
     return stats
@@ -570,9 +833,11 @@ def compute_curves(b, s: Struct, p: dict) -> dict:
             if kind == "plain":
                 mod = np.ones(st["pos"].size - 1)
             elif kind == "mj":
-                mod = (1.0 / (1.0 + mj_dilute *
-                              np.power(st["other"] / st["nrows"], mj_exp))
-                       * (1.0 + st["tgain"] * st["trip"]))
+                dil = (1.0 / (1.0 + mj_dilute *
+                              np.power(st["other"] / st["nrows"], mj_exp)))
+                if st.get("chord_row") is not None:
+                    dil = np.where(st["chord_row"], 1.0, dil)
+                mod = dil * (1.0 + st["tgain"] * st["trip"])
             elif kind == "cj":
                 mod = np.power(np.maximum(st["load"], 1e-6) / cj_norm, cj_exp)
             else:  # "ja"
@@ -631,14 +896,28 @@ def compute_curves(b, s: Struct, p: dict) -> dict:
     xp = np.power(xrow, float(p["od_mult_p"]))
     d = s.dt
     tau_c = float(p.get("chord_tau_c", 0.0))
+    note_chord = tau_c > 0.0 and p.get("note_chord", 0.0) >= 0.5
+    if note_chord:
+        u_l_n, u_r_n, gsz_n, wbar_n, wb_row_n = _row_gesture_cached(b, s, p)
     d_fp = d
     if tau_c > 0.0:
-        wf, wb = _chord_coupling(s, tau_c)
-        # the synchronous-note term uses the gap to the next ATTACK (rows
-        # with no coupling from their predecessor), skipping rows absorbed
-        # into this row's chord group -- otherwise a split chord's
-        # carrying row reads an artificially tiny interval and loses fp.
-        att_idx = np.flatnonzero(wb == 0.0)
+        if note_chord:
+            # legacy attack mask == (nothing in the previous row couples
+            # into this row), i.e. the backward coupling weight is 0 (the
+            # row after a collapsed group still has its own predecessor, so
+            # an always-true "first note of row" test would degenerate to the
+            # per-row interval -- CHORD-C R3).  wb_row is the coupling weight
+            # itself, so the mask is `wb_row == 0`, NOT `wb_row > 0` -- the
+            # inverted test kept every row and cost T4 a factor of 3.6.
+            att = 1.0 - wb_row_n
+            att_idx = np.flatnonzero(wb_row_n <= 0.0)
+        else:
+            wf, wb = _chord_coupling(s, tau_c)
+            # the synchronous-note term uses the gap to the next ATTACK (rows
+            # with no coupling from their predecessor), skipping rows absorbed
+            # into this row's chord group -- otherwise a split chord's
+            # carrying row reads an artificially tiny interval and loses fp.
+            att_idx = np.flatnonzero(wb == 0.0)
         j = np.searchsorted(att_idx, np.arange(n), side="right")
         has = j < att_idx.size
         na = att_idx[np.minimum(j, att_idx.size - 1)]
@@ -654,34 +933,66 @@ def compute_curves(b, s: Struct, p: dict) -> dict:
                    1.0 + p["p_boost"] * (r - lo) * np.power(r - hi, 2.0), 1.0)
     vv = 1.0 + p["p_lam2"] * s.ln_body_ms / \
         np.power(np.maximum(s.dt_ms, 1.0), float(p["p_v_norm"]))
-    chw = np.ones(K + 1)
-    chw[2:K + 1] = [p.get(f"p_chw{i}", 1.0) for i in range(2, K + 1)]
-    if tau_c > 0.0:
-        # 分级和弦定价：
-        #  * u = triangular +-tau_c window note count = effective chord
-        #    size (a chord split into rows a few ms apart keeps ~its full
-        #    group size); the p_chw* table is linearly interpolated at u.
-        #  * att = attack discount: a row dt ms after another is only
-        #    dt/tau_c of a new attack (absorbed into the previous row's
-        #    chord group) -- Pbar's 1/d intensity would otherwise price a
-        #    split chord as k full attacks.  The discount applies to the
-        #    RATE part of mix only: the LN-body occupation gain (vv - 1)
-        #    follows each row's own interval (its sum over rows is
-        #    grid-split invariant) and must not be discounted -- otherwise
-        #    the body mass migrates onto discounted sub-rows.
-        u = np.clip(_tri_window_count(s, s.size.astype(np.float64), tau_c),
-                    1.0, float(K))
-        i0 = np.minimum(u.astype(np.int64), K - 1)
-        frac = u - i0
-        chw_u = chw[i0] * (1.0 - frac) + chw[i0 + 1] * frac
-        att = 1.0 - wb
+    q = np.minimum(d_fp - xp / 2.0, xp / 6.0)
+    fp = np.power(np.maximum(p["p_scale"] / xp *
+                             (1.0 - (p["p_lam3"] / xp) * q * q), 0.0), 0.25)
+    r = 7.5 / d
+    lo, hi = float(p["p_boost_lo"]), float(p["p_boost_hi"])
+    bst = np.where((r > lo) & (r < hi),
+                   1.0 + p["p_boost"] * (r - lo) * np.power(r - hi, 2.0), 1.0)
+    vv = 1.0 + p["p_lam2"] * s.ln_body_ms / \
+        np.power(np.maximum(s.dt_ms, 1.0), float(p["p_v_norm"]))
+    if note_chord:
+        # CHORD-A v2 pricing.  The v1 form `att * g * (rate stuff)` broke A1
+        # superset monotonicity: `att` multiplies the whole event price and a
+        # chord row carries a LONGER interval than a single's, so a 2-chord
+        # stream at a matched onset rate came out CHEAPER than the single
+        # stream (-1.17* at 50 ms onsets).  The legacy code never had that
+        # problem because its chord factor is a SEPARATE unitless multiplier
+        # applied after the attack discount:
+        #     inc = (1/d) * fp * chw_u * [att*rate + (vv-1)]
+        # This branch keeps exactly that structure -- `chw_u` = g and `mix`
+        # = the legacy single-key mix -- so the chord tax cannot be scaled
+        # away by the discount, and with g == 1 the expression is
+        # character-for-character the legacy single-key price.
         if p["p_bv_max"] > 0.5:
             mix = att * np.maximum(bst, 1.0) + np.maximum(vv - 1.0, 0.0)
         else:
             mix = att * bst * vv
+        chw_u = _chord_g(u_l_n, u_r_n, p)
     else:
-        chw_u = chw[np.minimum(s.size, K)]
-        mix = np.maximum(bst, vv) if p["p_bv_max"] > 0.5 else bst * vv
+        chw = np.ones(K + 1)
+        chw[2:K + 1] = [p.get(f"p_chw{i}", 1.0) for i in range(2, K + 1)]
+        if tau_c > 0.0:
+            # 分级和弦定价：
+            #  * u = triangular +-tau_c window note count = effective chord
+            #    size (a chord split into rows a few ms apart keeps ~its full
+            #    group size); the p_chw* table is linearly interpolated at u.
+            #  * att = attack discount: a row dt ms after another is only
+            #    dt/tau_c of a new attack (absorbed into the previous row's
+            #    chord group) -- Pbar's 1/d intensity would otherwise price a
+            #    split chord as k full attacks.  The discount applies to the
+            #    RATE part of mix only: the LN-body occupation gain (vv - 1)
+            #    follows each row's own interval (its sum over rows is
+            #    grid-split invariant) and must not be discounted -- otherwise
+            #    the body mass migrates onto discounted sub-rows.
+            u = np.clip(_tri_window_count(s, s.size.astype(np.float64), tau_c),
+                        1.0, float(K))
+            i0 = np.minimum(u.astype(np.int64), K - 1)
+            frac = u - i0
+            chw_u = chw[i0] * (1.0 - frac) + chw[i0 + 1] * frac
+            att = 1.0 - wb
+            if p["p_bv_max"] > 0.5:
+                mix = att * np.maximum(bst, 1.0) + np.maximum(vv - 1.0, 0.0)
+            else:
+                mix = att * bst * vv
+        else:
+            chw_u = chw[np.minimum(s.size, K)]
+            mix = np.maximum(bst, vv) if p["p_bv_max"] > 0.5 else bst * vv
+    # NB: for note_chord the chord price is already inside `mix` (the tax must
+    # ride the UN-discounted rate or a chord row's longer interval makes a
+    # 2-chord stream cheaper than the single stream -- A1), and chw_u is left
+    # at 1 so it is not applied a second time here.
     inc = (1.0 / d) * fp * chw_u * mix
     anchor_mult = 1.0 + p["an_on_p"] * np.minimum(
         s.anchor_raw - p["an_a0"],
@@ -802,7 +1113,19 @@ def compute_curves(b, s: Struct, p: dict) -> dict:
     mask = s.mask.astype(np.int32)
     left = _POPCOUNT7[mask & 0b0000111]
     right = _POPCOUNT7[mask & 0b1110000]
-    if tau_c > 0.0:
+    if note_chord:
+        # CHORD-A v2 (CHORD-C R2): the same-hand chord mass is read off the
+        # PER-HAND gesture sizes, never off the total.  The v1 code used
+        # u_row * clip(u_row-1, 0, 1), which turns a pure cross-hand 2-chord
+        # (u_L = u_R = 1) into a same-hand mass of 2 and lets it collect the
+        # d_sh < 0 discount -- a measured -0.054* on a cross-hand stream.
+        #   legacy (u>=2)*u per hand  ->  u_h * clip(u_h-1, 0, 1)
+        # which also slides continuously through a 1 ms split instead of
+        # jumping by a whole note at the row seam.
+        le, ri = u_l_n, u_r_n
+        sh = (le * np.clip(le - 1.0, 0.0, 1.0)
+              + ri * np.clip(ri - 1.0, 0.0, 1.0))
+    elif tau_c > 0.0:
         # graded same-hand chord count (discrete_audit R5): triangular
         # +-tau_c window count of same-hand notes, then u*clip(u-1,0,1)
         # which equals the legacy (u>=2)*u at integer u and interpolates.
@@ -816,6 +1139,37 @@ def compute_curves(b, s: Struct, p: dict) -> dict:
         sh = (np.where(left >= 2, left, 0.0)
               + np.where(right >= 2, right, 0.0))
     SHd = _wmean(s, sh.astype(np.float64), max(float(p.get("shd_w", 1000.0)), 50.0))
+
+    # ---- hand-aware chord fee (A4 two-hand parallelism), stream routed.
+    # Column-span pricing (Xbar) is hand-blind: a compact same-hand grip
+    # spans fewer columns than the same notes split across the two hands, so
+    # it reads CHEAPER (CHORD-C G suite: left012 4.248 < bal024 4.273 -- a
+    # one-hand three-finger grip priced below a two-hand balanced one).
+    # Routing the fee through Xbar cannot fix that at SR level: with
+    # t_jack_mix < 0 the twist numerator Xt = Xbar + t_jack_mix*Jm_b is
+    # negative exactly on jack/chord-heavy charts, so D = d_b2*S never sees
+    # Xbar there (measured on the G suite: Xbar 0->4 moves SR by 0.000).
+    # The fee therefore enters the stream branch (combine, coefficient d_hc)
+    # as a per-hand superadditive charge on the gesture sizes:
+    #     hc = (u_l - 1)_+^hc_e + (u_r - 1)_+^hc_e
+    # (u-1)_+^e is non-decreasing in u (no new superset inversion) and
+    # superadditive for e > 1, so at a fixed key count concentrating keys on
+    # ONE hand costs strictly more than splitting them ((k,0): (k-1)^e vs
+    # (i,k-i): (i-1)^e + (k-i-1)^e).  A purely cross-hand chord pays nothing.
+    # With note_chord on, u_h are the continuous gesture sizes (a 1 ms chord
+    # split keeps its window-weighted fee instead of jumping); off, they
+    # fall back to the exact per-row hand popcounts.  SHd stays as is: its
+    # u*clip(u-1,0,1) shape fails A4 at size 4 (2L2R = 4 > 3L1R = 3).
+    # Computed unconditionally (same reason as SHd: d_hc is combine-level).
+    hc_e = max(float(p.get("hc_e", 1.5)), 1.0)
+    if note_chord:
+        hc_l, hc_r = u_l_n, u_r_n
+    else:
+        hc_l = _POPCOUNT7[mask & 0b0001111].astype(np.float64)
+        hc_r = _POPCOUNT7[mask & 0b1110000].astype(np.float64)
+    hc = (np.power(np.maximum(hc_l - 1.0, 0.0), hc_e)
+          + np.power(np.maximum(hc_r - 1.0, 0.0), hc_e))
+    HCd = _wmean(s, hc, max(float(p.get("shd_w", 1000.0)), 50.0))
 
     # ================================================================== Cbar
     Cbar = _cbar(b, s, p, xrow, stats, Jbar, Ja)
@@ -861,7 +1215,7 @@ def compute_curves(b, s: Struct, p: dict) -> dict:
     return dict(Jbar=Jbar, Jm=Jm, Jc=Jc, Ja=Ja, Pbar=Pbar, Xbar=Xbar,
                 Abar=Abar, Rbar=Rbar, Cbar=Cbar, CbarV2=CbarV2,
                 anchor=anchor_mult, EyeR=EyeR, Chord2=Chord2, Recov=Recov,
-                SHd=SHd)
+                SHd=SHd, HCd=HCd)
 
 
 def _cbar_v2(b, s: Struct, p: dict, stats) -> np.ndarray:
@@ -1159,6 +1513,46 @@ def _cbar(b, s: Struct, p: dict, xrow: np.ndarray, stats, Jbar, Ja) -> np.ndarra
 
 
 # ------------------------------------------------------------------ combine
+def _seg_iir(s: Struct, x: np.ndarray, tau: float) -> np.ndarray:
+    """Causal first-order IIR within each chart (Roxy decayState form).
+
+        F_k = F_{k-1} * exp(-dt_k/tau) + x_k,
+
+    where dt_k is the ms gap from the previous row of the SAME chart; the
+    first row of a chart restarts (F = x).  Causal (past-only, asymmetric),
+    non-negative for non-negative x, and self-saturating: a constant input
+    rate x/dt settles at ~x*tau/dt, and a low-density/gap period lets F
+    decay as exp(-dt/tau) (rest = recovery).  Evaluated per chart with the
+    exp-cumsum identity, re-based in blocks of <=500*tau so exp() never
+    overflows even for very small tau or very long charts.
+    """
+    tau = max(float(tau), 1.0)
+    out = np.empty(s.n, dtype=np.float64)
+    for c in range(s.n_charts):
+        lo, hi = int(s.starts[c]), int(s.starts[c + 1])
+        t = s.t[lo:hi]                       # ms, chart-local
+        xx = np.asarray(x[lo:hi], dtype=np.float64)
+        m = xx.size
+        if m == 0:
+            continue
+        y = np.empty(m, dtype=np.float64)
+        i0 = 0
+        carry = 0.0                          # F at row i0-1
+        prev_t = 0.0
+        while i0 < m:
+            if i0 > 0:
+                carry *= np.exp(-(t[i0] - prev_t) / tau)
+            i1 = int(np.searchsorted(t, t[i0] + 500.0 * tau, side="left"))
+            i1 = max(i1, i0 + 1)
+            eu = np.exp((t[i0:i1] - t[i0]) / tau)
+            y[i0:i1] = (carry + np.cumsum(xx[i0:i1] * eu)) / eu
+            carry = y[i1 - 1]
+            prev_t = t[i1 - 1]
+            i0 = i1
+        out[lo:hi] = y
+    return out
+
+
 def combine(s: Struct, cur: dict, p: dict) -> np.ndarray:
     A = np.maximum(cur["Abar"], 1e-6)
     Ks = s.Ks
@@ -1197,6 +1591,7 @@ def combine(s: Struct, cur: dict, p: dict) -> np.ndarray:
         + a_r_row * np.maximum(cur["Rbar"], 0.0) / (C + p["a_c"])
         + a_cb_row * np.maximum(cur["Cbar"], 0.0) / (C + p["a_cbc"])
         + float(p.get("d_sh", 0.0)) * cur.get("SHd", 0.0)
+        + float(p.get("d_hc", 0.0)) * cur.get("HCd", 0.0)
         + eye_term)
 
     # hybrid/LN: chord2 density into stream; recovery burst discount.
@@ -1240,6 +1635,27 @@ def combine(s: Struct, cur: dict, p: dict) -> np.ndarray:
                                p.get("read_clip_lo", 0.5),
                                p.get("read_clip_hi", 1.5))
             D = D * modifier
+
+    # ---- RT-4 stamina/fatigue branch (new non-negative additive curve).
+    # Input x = S (the combine-level local intensity: jack/stream power
+    # mean) -- the physical demand the player faces at each row.  S is
+    # upstream of this branch, so the branch never feeds back into itself
+    # and no existing curve is touched.  F accumulates sustained pressure
+    # over ~tau ms and saturates (steady state ~ S*tau/dt); gaps and
+    # low-density stretches decay it exponentially (rest = recovery).
+    # x is discounted by min(1, dt/stam_grp): a chord smeared into several
+    # rows 0-2 ms apart by timing jitter must NOT buy the impulse twice
+    # (the same anti-split idea as chord_tau_c); real successive notes sit
+    # far above stam_grp and are unaffected.  c_stam = 0 (default)
+    # disables the branch bit-for-bit.
+    c_stam = float(p.get("c_stam", 0.0))
+    if c_stam != 0.0:
+        tau = max(float(p.get("stam_tau", 8000.0)), 1.0)
+        grp = max(float(p.get("stam_grp", 30.0)), 1.0)
+        dt_prev = np.full(s.n, np.inf)
+        dt_prev[1:] = np.where(s.chart_same, s.t[1:] - s.t[:-1], np.inf)
+        x = S * np.minimum(1.0, dt_prev / grp)
+        D = D + c_stam * _seg_iir(s, x, tau)
 
     return np.maximum(np.nan_to_num(D, nan=0.0, posinf=0.0, neginf=0.0), 0.0)
 
@@ -1310,7 +1726,9 @@ def aggregate(s: Struct, D: np.ndarray, p: dict,
     """Per-chart SR from the difficulty curve D(t).
 
     agg_mode: 0 = Sunny percentiles, 1 = soft-max (exponential mean),
-              2 = sigmoid accuracy model, 3 = weighted power mean.
+              2 = sigmoid accuracy model, 3 = weighted power mean,
+              4 = two-level sectioned mass aggregate (AGG-D),
+              5 = sustained-demand capacity bisection (AGG-C).
     """
     n = s.n
     # 保留峰值的包络。加权平均会稀释窄峰，
@@ -1325,11 +1743,33 @@ def aggregate(s: Struct, D: np.ndarray, p: dict,
     dprev[1:] = dnext[:-1]
     dprev[s.starts[:-1]] = 0.0
     gp = np.maximum(0.5 * (dnext + dprev), 0.0)
-    w = np.power(gp, float(p["agg_gap_w"])) * \
-        np.power(np.maximum(s.C, 0.0), float(p["agg_wc"]))
+    # AGG-B: aggw_gap_cap > 0 clamps the row gap that feeds the weight.  The
+    # unit is MILLISECONDS: gp is built from s.dt_diff = diff(b.tg) and b.t
+    # carries the .osu timestamps in ms (typical dense row gap 60-130 ms,
+    # max ~11 s).  Past a few hundred ms a longer gap carries no "amount of
+    # notes" information, only the absence of it, so an isolated note 30 s
+    # after a section can no longer buy itself more weight than the section.
+    # Without a cap the gp unit is irrelevant (a global scale factor cancels
+    # in the normalised power mean); with a cap it defines the clamp.
+    # 0 = off = legacy behaviour (bit-for-bit).
+    gap_cap = float(p.get("aggw_gap_cap", 0.0))
+    if gap_cap > 0.0:
+        gp = np.minimum(gp, gap_cap)
+    # AGG-B: which local "amount of notes" factor multiplies the weight:
+    #   aggw_src 0 = legacy +-500 ms note count C^agg_wc (window based)
+    #   aggw_src 1 = the row's own chord size size^agg_wc (purely local; a
+    #                rest row does not exist at all, so silence weighs 0)
+    if float(p.get("aggw_src", 0.0)):
+        amount = np.power(np.maximum(s.size.astype(np.float64), 0.0),
+                          float(p["agg_wc"]))
+    else:
+        amount = np.power(np.maximum(s.C, 0.0), float(p["agg_wc"]))
+    w = np.power(gp, float(p["agg_gap_w"])) * amount
     if hold_w and p.get("hw_a", 0.0):
         h = s.held
         w = w * (1.0 + p["hw_a"] * h / (h + max(p.get("hw_half", 1.0), 1e-6)))
+    # Single clamp every aggregation weight passes through: it also catches
+    # a negative hold factor (1 + hw_a*h/(h+hw_half) < 0 for a steep hw_a).
     w = np.maximum(np.nan_to_num(w, nan=0.0, posinf=0.0, neginf=0.0), 0.0)
     D = np.maximum(np.nan_to_num(D, nan=0.0, posinf=0.0, neginf=0.0), 0.0)
 
@@ -1351,7 +1791,14 @@ def aggregate(s: Struct, D: np.ndarray, p: dict,
         sw = np.zeros(s.n_charts)
         np.add.at(sw, s.chart, w)
         return np.power(acc / np.maximum(sw, EPS), 1.0 / pw)
-    return _sigmoid_agg(s, D, w, p)
+    if mode == 4:
+        return _aggc_two_level(s, D, gp, p, hold_w)
+    if mode == 5:
+        return _aggc_demand(s, D, gp, p, hold_w)
+    if mode == 2:
+        return _sigmoid_agg(s, D, w, p)
+    raise ValueError(f"unknown agg_mode {p['agg_mode']!r} "
+                     "(expected 0/1/2/3/4/5)")
 
 
 def _percentiles(s: Struct, D: np.ndarray, w: np.ndarray, p: dict) -> np.ndarray:
@@ -1424,6 +1871,251 @@ def _sigmoid_agg(s: Struct, D: np.ndarray, w: np.ndarray, p: dict) -> np.ndarray
         greater = val > target
         lo = np.where(greater, mid, lo)
         hi = np.where(greater, hi, mid)
+    return 0.5 * (lo + hi)
+
+
+# ------------------------------------------------------------------ AGG-C/D
+def _aggc_mass(s: Struct, gp: np.ndarray, p: dict, hold_w: bool) -> np.ndarray:
+    """Row engagement mass for the AGG-C/D modes.
+
+    The defining choice of the family: wall-clock gaps are NOT mass -- a row
+    counts in proportion to how much material the player is engaged with
+    (the +-500 ms note count C), optionally modulated by the release
+    hold-aware factor.  Silence therefore carries exactly zero weight
+    instead of diluting the aggregate.
+
+    aggC_gw != 0 adds a BOUNDED gap factor min(gp, aggC_gc)**aggC_gw: the
+    gap measures how much time the player is given for the row, but past a
+    few hundred ms it carries no further engagement information -- the cap
+    is what keeps distant sparse taps from buying weight (the T1 bug).
+    The near-zero end suppresses zero-width-interval rows whose D value is
+    numerically fragile under sub-ms jitter (the T4 chaos source).
+    0 = off = pure note-count mass (bit-for-bit with the v1 form).
+    """
+    m = np.power(np.maximum(s.C, 0.0), max(float(p["aggC_wc"]), 0.0))
+    gw = float(p.get("aggC_gw", 0.0))
+    if gw != 0.0:
+        gc = max(float(p.get("aggC_gc", 400.0)), 1.0)
+        m = m * np.power(np.minimum(np.maximum(gp, 0.0), gc), gw)
+    if hold_w and p.get("aggC_hw", 0.0) and p.get("hw_a", 0.0):
+        h = s.held
+        m = m * (1.0 + p["hw_a"] * h
+                 / (h + max(p.get("hw_half", 1.0), 1e-6)))
+    return np.maximum(np.nan_to_num(m, nan=0.0, posinf=0.0, neginf=0.0), 0.0)
+
+
+def _aggc_windows(s: Struct, ms: float, gap: float,
+                  ms_4k: float = 0.0, gap_4k: float = 0.0,
+                  use_4k: bool = False):
+    """Partition rows into content sections and fixed windows.
+
+    A silence >= gap ms (or a chart start) opens a new section; windows of
+    `ms` ms are anchored at the section start, so the window grid follows
+    the content rather than the wall clock.  Windows containing no rows
+    never exist, which is what makes inserted rests drop out of the
+    aggregate.  Returns (inv, chart_win, reset, pre_gap, is4k_win):
+      inv       per-row window index (non-decreasing along the flat axis)
+      chart_win chart id of each window
+      reset     True for the first window of every section
+      pre_gap   silence (ms) before each window's first row
+      is4k_win  True where the window belongs to a 4K chart
+
+    AGG-D 精炼 (P1.5) -- per-domain geometry: key counts are constant inside
+    one chart (is_4k is a per-chart flag repeated over its rows), so a chart
+    is either entirely 4K or entirely non-4K and the geometry override can be
+    applied per chart.  With `use_4k` the row axis is partitioned by
+    s.is_4k[s.chart] and each half is windowed with its own geometry
+    (4K half: ms_4k / gap_4k, otherwise ms / gap).  `use_4k=False`, or
+    ms_4k/gap_4k at/below 0 (the "inherit" sentinel), takes the original
+    single-geometry path bit-for-bit -- behaviour rule 2: adding the
+    parameters must not move the current output by one bit.
+    """
+    n = s.n
+    first = np.zeros(n, dtype=bool)
+    first[s.starts[:-1]] = True
+    prev_gap = np.zeros(n)
+    if n > 1:
+        prev_gap[1:] = s.dt_diff[:n - 1]
+
+    def _one(seg_gap, seg_ms):
+        # NOTE seg_gap / seg_ms carry the (possibly per-domain) geometry; the
+        # outer `gap` / `ms` are the batch-global values and must NOT be used
+        # here -- the 4K group cuts and tiles on its own geometry.
+        boundary = first | (prev_gap >= seg_gap)
+        sec = np.cumsum(boundary) - 1
+        t0 = s.t[np.flatnonzero(boundary)]
+        widx = (np.floor(np.maximum(s.t - t0[sec], 0.0) / seg_ms)
+                .astype(np.int64))
+        # The key only has to GROUP equal (section, window) pairs; the window
+        # index is then derived by np.unique, so the packing never bounds the
+        # validity of the result.  (The old `sec * (widx.max()+1) + widx`
+        # overflowed int64 for a wide window over a long span, which would
+        # have silently merged distinct windows.)
+        key = sec * _AGG_WIDX + widx
+        ukey, ginv = np.unique(key, return_inverse=True)
+        ginv = ginv.astype(np.int64, copy=False)
+        # Row index of every window's first row.  The seed True makes
+        # flatnonzero include row 0, so window 0 exists exactly once -- do
+        # NOT prepend a 0 here (that would create a bogus empty window).
+        starts_w = np.flatnonzero(np.concatenate(
+            (np.ones(1, dtype=bool), ginv[1:] != ginv[:-1])))
+        return ginv, starts_w, boundary, prev_gap
+
+    if use_4k:
+        # A batch holds either both domains (single-process evaluation) or
+        # exactly one of them (the shard pools: one pool per dataset).  A
+        # uniform all-4K batch must therefore still get the 4K geometry --
+        # that is the production path -- and a batch with no 4K chart at all
+        # must behave exactly as if the override were absent.
+        is4k = s.is_4k[s.chart]
+        if is4k.all() and is4k.size:
+            inv, starts_w, reset, pre_gap = _one(
+                gap_4k if gap_4k > 0.0 else gap,
+                ms_4k if ms_4k > 0.0 else ms)
+            return (inv, s.chart[starts_w], reset, pre_gap,
+                    np.ones(starts_w.size, dtype=bool))
+        if is4k.any() and (~is4k).any():
+            ms4 = ms_4k if ms_4k > 0.0 else ms
+            gap4 = gap_4k if gap_4k > 0.0 else gap
+            inv = np.zeros(n, dtype=np.int64)
+            wch, wreset, wgap, w4 = [], [], [], []
+            base_w = 0
+            for flag in (False, True):
+                g = np.flatnonzero(is4k) if flag else np.flatnonzero(~is4k)
+                ginv, _, bnd, pgv = _one(
+                    gap4 if flag else gap, ms4 if flag else ms)
+                # Group-local window starts: `_one` numbers windows over the
+                # WHOLE batch, so its own starts may point at the other
+                # group's rows.  `g` is ascending, so one comparison on the
+                # group's own id sequence gives exactly this group's windows.
+                # `gid` is numbered over the whole batch as well, so compact
+                # it to 0..n_win_group-1 before adding the running offset --
+                # otherwise the window matrix gets holes and its length no
+                # longer matches the number of windows.
+                _, gid = np.unique(ginv[g], return_inverse=True)
+                gid = gid.reshape(-1).astype(np.int64, copy=False)
+                sw = np.flatnonzero(np.concatenate(
+                    (np.ones(1, dtype=bool), gid[1:] != gid[:-1])))
+                # Window ids are group-local (both start at 0) -> shift the
+                # second group so the two partitions stay disjoint.
+                inv[g] = gid + base_w
+                base_w += gid[-1] + 1
+                wch.append(s.chart[g[sw]])
+                wreset.append(bnd[g[sw]])
+                wgap.append(pgv[g[sw]])
+                w4.append(np.full(sw.size, flag, dtype=bool))
+            return (inv, np.concatenate(wch), np.concatenate(wreset),
+                    np.concatenate(wgap), np.concatenate(w4))
+
+    inv, starts_w, reset, pre_gap = _one(gap, ms)
+    return (inv, s.chart[starts_w], reset[starts_w], pre_gap[starts_w],
+            np.zeros(starts_w.size, dtype=bool))
+
+
+def _aggc_geom(p: dict):
+    """Resolve the AGG-D window geometry, including the per-domain 4K override.
+
+    0 (or negative) means INHERIT, not "zero-length window".
+    """
+    ms = max(float(p["aggC_ms"]), 50.0)
+    gap = max(float(p["aggC_gap"]), 50.0)
+    ms_4k = float(p.get("aggC_ms_4k", 0.0) or 0.0)
+    gap_4k = float(p.get("aggC_gap_4k", 0.0) or 0.0)
+    ms_4k = max(ms_4k, 50.0) if ms_4k > 0.0 else -1.0
+    gap_4k = max(gap_4k, 50.0) if gap_4k > 0.0 else -1.0
+    # Only a genuine override takes the split path; both sentinels (or an
+    # override numerically equal to the global value) keep the original path.
+    use_4k = (ms_4k > 0.0 and ms_4k != ms) or (gap_4k > 0.0 and gap_4k != gap)
+    return ms, gap, ms_4k, gap_4k, use_4k
+
+
+def _aggc_two_level(s: Struct, D: np.ndarray, gp: np.ndarray, p: dict,
+                    hold_w: bool) -> np.ndarray:
+    """agg_mode 4 -- two-level sectioned mass aggregate (AGG-D).
+
+    Level 1: window difficulty = mass-weighted aggC_pw1 power mean of D.
+    Level 2: chart SR = window-mass-weighted aggC_pw2 power mean over the
+    window multiset.  A mean over the window multiset is exactly invariant
+    under content repetition (x4 vs x8 tile to the same multiset) and
+    immune to appended sparse taps (their windows carry ~zero mass), while
+    the window level keeps sensitivity to local peaks that a flat mass
+    mean would dilute across the whole chart.
+
+    The window geometry may differ per domain (aggC_ms_4k / aggC_gap_4k);
+    the two levels are still computed on the union of both window sets with
+    np.add.at scatter-adds, which align with the old np.bincount calls
+    value-for-value when the override is off.
+    """
+    m = _aggc_mass(s, gp, p, hold_w)
+    pw1 = max(float(p["aggC_pw1"]), 0.05)
+    pw2 = max(float(p["aggC_pw2"]), 0.05)
+    ms, gap, ms_4k, gap_4k, use_4k = _aggc_geom(p)
+    inv, chart_win, _, _, _ = _aggc_windows(s, ms, gap, ms_4k, gap_4k, use_4k)
+    nw = chart_win.size
+    M = np.zeros(nw)
+    np.add.at(M, inv, m)
+    num1 = np.zeros(nw)
+    np.add.at(num1, inv, m * np.power(D, pw1))
+    d1 = np.power(num1 / np.maximum(M, EPS), 1.0 / pw1)
+    num = np.zeros(s.n_charts)
+    np.add.at(num, chart_win, M * np.power(d1, pw2))
+    den = np.zeros(s.n_charts)
+    np.add.at(den, chart_win, M)
+    return np.power(num / np.maximum(den, EPS), 1.0 / pw2)
+
+
+def _aggc_demand(s: Struct, D: np.ndarray, gp: np.ndarray, p: dict,
+                 hold_w: bool) -> np.ndarray:
+    """agg_mode 5 -- sustained-demand / capacity bisection (AGG-C).
+
+    The player is a capacity-limited integrator: playing a window of
+    difficulty d while at water level u adds M*(d-u) of fatigue; fatigue
+    decays exponentially across inter-window silence (time constant
+    aggC_tau) and is fully reset at section boundaries -- any silence that
+    splits a section is a breath.  SR = the lowest water level u whose
+    peak fatigue never exceeds the capacity aggC_kap, solved by bisection.
+    The time ORDER of demand is kept instead of being sorted away.
+
+    Shares the AGG-D window geometry, including the per-domain 4K override.
+    """
+    m = _aggc_mass(s, gp, p, hold_w)
+    pw1 = max(float(p["aggC_pw1"]), 0.05)
+    tau = max(float(p["aggC_tau"]), 50.0)
+    kap = max(float(p["aggC_kap"]), 1e-9)
+    ms, gap, ms_4k, gap_4k, use_4k = _aggc_geom(p)
+    inv, chart_win, reset, pre_gap, _ = _aggc_windows(
+        s, ms, gap, ms_4k, gap_4k, use_4k)
+    nw = chart_win.size
+    M = np.bincount(inv, weights=m, minlength=nw)
+    d1 = np.power(
+        np.bincount(inv, weights=m * np.power(D, pw1), minlength=nw)
+        / np.maximum(M, EPS), 1.0 / pw1)
+    # padded per-chart window matrices (padding only past each chart's end)
+    counts = np.bincount(chart_win, minlength=s.n_charts)
+    W = max(int(counts.max()) if nw else 1, 1)
+    pos = np.arange(nw) - np.repeat(np.cumsum(counts) - counts, counts)
+    MM = np.zeros((s.n_charts, W))
+    DD = np.zeros((s.n_charts, W))
+    DEC = np.zeros((s.n_charts, W))
+    valid = np.zeros((s.n_charts, W), dtype=bool)
+    MM[chart_win, pos] = M
+    DD[chart_win, pos] = d1
+    DEC[chart_win, pos] = np.where(reset, 0.0, np.exp(-pre_gap / tau))
+    valid[chart_win, pos] = True
+    lo = np.zeros(s.n_charts)
+    hi = DD.max(axis=1) + 1.0
+    for _ in range(26):
+        mid = 0.5 * (lo + hi)
+        F = np.zeros(s.n_charts)
+        peak = np.zeros(s.n_charts)
+        for j in range(W):
+            F = np.where(valid[:, j],
+                         np.maximum(0.0, F * DEC[:, j]
+                                    + MM[:, j] * (DD[:, j] - mid)), F)
+            peak = np.maximum(peak, F)
+        feas = peak <= kap
+        lo = np.where(feas, lo, mid)
+        hi = np.where(feas, mid, hi)
     return 0.5 * (lo + hi)
 
 

@@ -1,6 +1,7 @@
-"""SPM Rating v1.0.0 —— 自包含评分引擎（单文件）。
+"""SPM Rating v1.1.0 —— 自包含评分引擎（单文件）。
 
-本文件由 core/ 自动组装，与仓库 core/ 在数值上完全一致。直接 import 即可使用：
+本文件由 experiments/build_engine_bundle.py 从 core/ 自动组装，
+与仓库 core/ 在数值上完全一致。直接 import 即可使用：
 
   from spm_engine import rate_file, rate_content, rate_notes
 
@@ -18,7 +19,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 
 
-_PARAMS_JSON = {"note": "SPM Rating v1.0.0 release parameters. Benchmark scores (Spearman rank correlation): 7K 0.98449 / 4K 0.98535 / 6K zero-shot 0.95796.", "params": {"a_c": 10.717498918905136, "a_cb": 4.0, "a_cb_4k": 11.357365798773392, "a_cbc": 10.310670820602846, "a_p": 0.457050886903945, "a_p_4k": 0.9671708233722217, "a_r": 59.95490931764664, "a_r_4k": 0.0, "abar_active": 0.02531712913365081, "abar_c0": 0.729854838334696, "abar_c1": 0.6730069593477146, "abar_k": 5.869324658227848, "abar_mx": 0.48830826958952744, "abar_mx_thr": 0.10636359112398937, "abar_mx_w": 0.45817570312814426, "abar_scale": 1.009862473386292, "abar_thr_hi": 0.09447563280275387, "abar_thr_lo": 0.01682395583948343, "abar_weld": 1.0, "agg_C": 5.7765188650680015, "agg_gamma": 0.3142734186203886, "agg_gap_w": 1.0873927743990874, "agg_k": 3.923290274033005, "agg_mode": 3.0, "agg_nseg": 30.0, "agg_wc": 1.145022164188944, "aj": 4.107175656089324, "an_a0": 0.17043768459177114, "an_a1": 0.34850214310770977, "an_cubic": 6.806495193662656, "an_on_p": -0.3268168035336469, "ap": 0.8414094716039964, "at": 5.704296617075204, "c_chord2": 0.5, "c_fj": 1.1223698076832407, "c_fj_4k": 1.6384853006440867, "c_ja": -0.001250731346377573, "c_jc": 0.13300526379892, "c_jm": 0.5136914244166452, "c_s": 0.4182231311873207, "calib_a": 1.0269058337789674, "calib_b": 0.506803040656835, "cap_a": 10.84672199638674, "cap_b": 0.7669642744433789, "cb_holdtap": 0.0, "cb_holdtap_pow": 1.0, "cb_lock_pow": 1.0, "cb_lockanchor": 0.0, "cb_lockjack": 0.0, "cb_par": 0.0, "cb_shield": 0.0, "cb_shield_lock": 0.8062, "cb_shield_tau": 56.24, "cbv_churn": 2.7804415879691047, "cbv_churn_4k": 0.0018149727082640878, "cbv_holdage": 3.4070743387277163, "cbv_holdage_4k": 0.0017655285135421454, "cbv_holdtap": -1.0227403453455164, "cbv_lock_pow": 0.9662307730974806, "cbv_lockanchor": 1.3023578337914123, "cbv_lockstack": 0.5382064568725327, "cbv_ls_1h_split": 0.6669564049783417, "cbv_ls_2h_split": 0.628481439284875, "cbv_ls_cross": 0.6384201937709314, "cbv_ls_sh_adj": 0.9897529278156161, "cbv_ls_sh_split": 0.694320421215397, "cbv_ov_1h_split": 0.8912801595852077, "cbv_ov_2h_split": 0.628660224600841, "cbv_ov_cap": 2451.2427577736403, "cbv_ov_cross": 0.43216200109373926, "cbv_ov_dt_max": 1511.5378347371243, "cbv_ov_sh_adj": 1.2272220519138874, "cbv_ov_sh_split": 1.2153000673016874, "cbv_overlap": 0.9863986916717904, "cbv_sh_dt_max": 256.0406131304308, "cbv_sh_ln_tau": 145.443782024068, "cbv_sh_ln_w": 1.0790072249120857, "cbv_sh_lock": 1.0870780764260457, "cbv_sh_tau": 75.33463318028997, "cbv_shield": 1.1200999548581216, "cbv_str_1h_split": 0.5323308514011785, "cbv_str_2h_split": 0.17479688357773077, "cbv_str_bal": 1.141728630652899, "cbv_str_cross": 0.09922357503493356, "cbv_str_h0": 0.8793037998512705, "cbv_str_h1": 0.9113686383081036, "cbv_str_h2": 0.8557205717895041, "cbv_str_h3": 0.5028456653288493, "cbv_str_maxd": 2.048176307602251, "cbv_str_sh_adj": 0.19036255960279166, "cbv_str_sh_split": 0.9209759560022021, "cbv_straddle": 0.45854924271224995, "cbv_w": 1140.2267181326677, "chord2_w": 998.3068456460403, "chord_tau_c": 28.00006103515625, "churn_event_rate": 0.0, "churn_sat": 14.712127862753169, "churn_w": 1022.5551356347157, "cj_norm": 1.9757525590733565, "cj_size_exp": 1.0152415724691892, "d_b1": 1.4529112152056358, "d_b2": 0.4343400978218659, "d_ds": 0.5436886594030598, "d_dt": 1.3838263378115971, "d_eye": 0.0818717181241305, "d_eye_4k": 0.014013206098578592, "d_read": 0.0, "d_read_4k": 0.0, "d_rec": 0.78125, "d_sh": -0.18851239465270642, "env_ms": 395.28032205483703, "env_w": 0.0033333333333333335, "eye_tau": 0.2, "eye_w_ref": 4000.0, "eye_w_s": 500.0, "holdage_cap": 0.9712508526439506, "holdage_th": 0.25073103183213685, "hw_a": -4.833333333333334, "hw_half": 51.932695284873475, "j_agg_pow": 4.220517945172583, "j_c1": 0.11994305455701491, "j_nerf_a": -2.266651862989442e-05, "j_nerf_c": 0.07443739821757173, "j_nerf_off": 0.15369105717534054, "j_triple_gain": 0.01930565188193239, "j_triple_gain_4k": 0.5356436393950172, "j_triple_pow": 1.005976267076746, "j_triple_tau": 135.97491132645644, "ja_coord_exp": -9.268498548764114e-05, "ja_gap_thr": 253.00356478769385, "ja_len_exp": 1.0047596122947928, "ja_len_floor": 4.074244535477681, "ja_norm": 5.981391018054386, "ln_eff_tail_ms": 0.0, "ln_note_level": 0.0, "mean_pow": 6.465267031930503, "mj_dilute": 0.23679879956914796, "mj_dilute_exp": 0.9615171298692908, "od_mult_ja": -1.0, "od_mult_jc": -0.37109374999999944, "od_mult_jm": 0.7504257038347726, "od_mult_p": 1.1264849156945338, "od_mult_r": 1.064323992348447, "od_mult_x": 1.1651306736110387, "out_a": 0.699552129082087, "out_b": -0.7830329139461331, "p83_c": 2.667686959362696, "p93_c": 2.505172683584436, "p_boost": -1e-05, "p_boost_hi": 401.3793072521453, "p_boost_lo": 186.3466709871835, "p_burst3": 0.05749725160072005, "p_burst4": 0.041571581046874806, "p_bv_max": 1.023169107328028, "p_chw2": 0.6997350782823039, "p_chw3": 1.4710731528472405, "p_chw4": 0.82149995851254, "p_chw5": 0.8676070127257947, "p_chw6": 0.7474127532548505, "p_chw7": 1.03284160083206, "p_lam2": 0.006084380903675146, "p_lam3": 27.838293996532915, "p_sat_a": 10.690152688495372, "p_sat_b": 2.0349325289971496, "p_scale": 0.05862260059258437, "p_v_norm": -0.005007331887365899, "pp_div": 1.617868498725467, "pp_n0": 59.287573788026904, "pp_scale": 1.0018513493936536, "pp_thr": 7.703696089438818, "r_I_off": 1.679847001293981, "r_I_steep": 3.8155719025104933, "r_I_w": 1.0611113361746765, "r_ain0": 1.402277599248007, "r_ain1": 0.8487725298502042, "r_ain2": 0.9889530992577216, "r_ain3": 1.4808396303580251, "r_coord_e": 0.6807568539174652, "r_cw_cross": 0.6899948287076584, "r_cw_hand": 0.42489506847315023, "r_cw_same": 0.9824539263359018, "r_cw_thumb": 0.3660514384223894, "r_dt_max": 5985.197267885601, "r_dtr_min": 0.015, "r_lock": 0.1775454477373913, "r_order_pen": 0.04982726415201301, "r_order_tau": 404.3308885287425, "r_same_col": 0.39414011153048933, "r_seq": 0.06596340070980779, "r_short_red": 0.10936100877002214, "r_short_thr": 440.09681230961536, "r_sim_tau": 10.0, "r_simul": 0.08534094291675064, "r_soft_edges": 1.0, "r_straddle": -0.11540999412449468, "r_tail": 0.02898542543998874, "r_tt": 3.5417544104085192, "read_clip_hi": 1.5, "read_clip_lo": 0.5, "read_n_win": 16.0, "read_tol": 0.18, "rec_half": 0.4886690846205094, "recov_w": 989.9492044110127, "recov_wl": 21003.231873446508, "s_p": 1.2386750812693854, "shd_w": 1071.1117107781824, "t_jack_mix": -0.35552500051452174, "t_s_off": 0.4819735114526039, "use_cbar_v2": 1.0, "use_cbv_holdtap": 1.0, "use_cbv_lockanchor": 1.0, "use_cbv_lockstack": 1.0, "use_cbv_overlap": 1.0, "use_cbv_shield": 1.0, "use_cbv_straddle": 1.0, "use_eye": 1.0, "use_hb": 1.0, "use_read": 0.0, "w83": 0.4815139944602175, "w93": 0.3605157897072774, "w_a": 60.794584215917084, "w_cb": 1716.856156378797, "w_ja": 0.0, "w_jc": -0.4781249999999999, "w_jm": 842.9060364136417, "w_p": 806.2241563795392, "w_r": 1349.4219390385326, "w_x": 939.2935347185421, "wmean": 2.1613377064577026, "x_amp": 0.14776064699735425, "x_cw0": 0.1460113252705887, "x_cw1": 0.3535388218642357, "x_cw2": 0.3389326726836199, "x_cw3": 0.04918990446028124, "x_din": -0.595854461464495, "x_dir_in": 0.2845860534263308, "x_dir_out": -0.016749922744166222, "x_dout": 0.9858637139438629, "x_fc_a": 0.541953977488367, "x_fc_floor": 0.04577642898224647, "x_fc_off": 60.317605380705, "x_fc_w": 1.6631718126735746, "x_jd_e": 1.0765985987293114, "x_jd_p": 0.0456784859552089, "x_jh_e": 1.6812589290379765, "x_jh_p": 1.0261744953668672, "x_jt": 0.5592172136082718, "x_jump_w": -0.852278272911138}}
+_PARAMS_JSON = {"note": "SPM Rating v1.1.0 release parameters. Benchmark scores (Spearman rank correlation): 7K 0.98490 / 4K 0.98531 / 6K zero-shot 0.95595. Changes vs v1.0.0: mass-weighted sectioned aggregation (copy-paste/rest-invariant), continuous gesture-level chord detection (2-7 chord unified, two-hand structured), superset + hand-parallelism axiom fixes. Stamina/fj-bounded/tech mechanisms implemented but default-OFF (data did not support them).", "params": {"a_c": 10.717498918905136, "a_cb": 4.0, "a_cb_4k": 11.357365798773392, "a_cbc": 10.310670820602846, "a_p": 0.457050886903945, "a_p_4k": 0.9671708233722217, "a_r": 59.95490931764664, "a_r_4k": 0.0, "abar_active": 0.02531712913365081, "abar_c0": 0.729854838334696, "abar_c1": 0.6730069593477146, "abar_k": 5.869324658227848, "abar_mx": 0.48830826958952744, "abar_mx_thr": 0.10636359112398937, "abar_mx_w": 0.45817570312814426, "abar_scale": 1.009862473386292, "abar_thr_hi": 0.09447563280275387, "abar_thr_lo": 0.01682395583948343, "abar_weld": 1.0, "aggC_gap": 1854.5025717967414, "aggC_gap_4k": 0.0, "aggC_gc": 175.54925904730135, "aggC_gw": 0.9662521390192742, "aggC_hw": 1.0, "aggC_kap": 0.8158674595893058, "aggC_ms": 6902.951638984199, "aggC_ms_4k": 0.0, "aggC_pw1": 2.136557656138545, "aggC_pw2": 5.387422077432465, "aggC_tau": 4000.565712785322, "aggC_wc": 1.1549846294570107, "agg_C": 5.7765188650680015, "agg_gamma": 0.3142734186203886, "agg_gap_w": 1.0873927743990874, "agg_k": 3.923290274033005, "agg_mode": 4.0, "agg_nseg": 30.0, "agg_wc": 1.145022164188944, "aggw_gap_cap": 0.0, "aggw_src": 0.0, "aj": 3.9808431543594054, "an_a0": 0.17043768459177114, "an_a1": 0.34850214310770977, "an_cubic": 6.806495193662656, "an_on_p": -0.3268168035336469, "ap": 0.5424624766238797, "at": 5.704296617075204, "c_chord2": 0.0, "c_fj": 1.1223698076832407, "c_fj_4k": 1.6384853006440867, "c_ja": -0.001250731346377573, "c_jc": 0.06036006771704075, "c_jm": 0.48876747736872084, "c_s": 0.41160107609882524, "calib_a": 0.9874699211242837, "calib_b": 0.7754219268783653, "cap_a": 10.84672199638674, "cap_b": 0.7669642744433789, "cb_holdtap": 0.0, "cb_holdtap_pow": 1.0, "cb_lock_pow": 1.0, "cb_lockanchor": 0.0, "cb_lockjack": 0.0, "cb_par": 0.0, "cb_shield": 0.0, "cb_shield_lock": 0.8062, "cb_shield_tau": 56.24, "cbv_churn": 2.7804415879691047, "cbv_churn_4k": 0.0018149727082640878, "cbv_holdage": 3.4070743387277163, "cbv_holdage_4k": 0.0017655285135421454, "cbv_holdtap": -1.0227403453455164, "cbv_lock_pow": 0.9662307730974806, "cbv_lockanchor": 1.3023578337914123, "cbv_lockstack": 0.5382064568725327, "cbv_ls_1h_split": 0.6669564049783417, "cbv_ls_2h_split": 0.628481439284875, "cbv_ls_cross": 0.6384201937709314, "cbv_ls_sh_adj": 0.9897529278156161, "cbv_ls_sh_split": 0.694320421215397, "cbv_ov_1h_split": 0.8912801595852077, "cbv_ov_2h_split": 0.628660224600841, "cbv_ov_cap": 2451.2427577736403, "cbv_ov_cross": 0.43216200109373926, "cbv_ov_dt_max": 1511.5378347371243, "cbv_ov_sh_adj": 1.2272220519138874, "cbv_ov_sh_split": 1.2153000673016874, "cbv_overlap": 0.9863986916717904, "cbv_sh_dt_max": 256.0406131304308, "cbv_sh_ln_tau": 145.443782024068, "cbv_sh_ln_w": 1.0790072249120857, "cbv_sh_lock": 1.0870780764260457, "cbv_sh_tau": 75.33463318028997, "cbv_shield": 1.1200999548581216, "cbv_str_1h_split": 0.5323308514011785, "cbv_str_2h_split": 0.17479688357773077, "cbv_str_bal": 1.141728630652899, "cbv_str_cross": 0.09922357503493356, "cbv_str_h0": 0.8793037998512705, "cbv_str_h1": 0.9113686383081036, "cbv_str_h2": 0.8557205717895041, "cbv_str_h3": 0.5028456653288493, "cbv_str_maxd": 2.048176307602251, "cbv_str_sh_adj": 0.19036255960279166, "cbv_str_sh_split": 0.9209759560022021, "cbv_straddle": 0.45854924271224995, "cbv_w": 1140.2267181326677, "chord2_hard": 1.0, "chord2_w": 998.3068456460403, "chord_no_dilute": 1.0, "chord_soft_att": 1.0, "chord_tau_c": 28.00006103515625, "churn_event_rate": 0.0, "churn_sat": 14.712127862753169, "churn_w": 1022.5551356347157, "cj_norm": 1.9757525590733565, "cj_size_exp": 1.0152415724691892, "d_b1": 1.4529112152056358, "d_b2": 0.4343400978218659, "d_ds": 0.5436886594030598, "d_dt": 1.3838263378115971, "d_eye": 0.0818717181241305, "d_eye_4k": 0.014013206098578592, "d_hc": 0.4, "d_read": 0.0, "d_read_4k": 0.0, "d_rec": 0.78125, "d_sh": 0.0, "env_ms": 395.28032205483703, "env_w": 0.0033333333333333335, "eye_tau": 0.2, "eye_w_ref": 4000.0, "eye_w_s": 500.0, "ga_alpha": 0.0, "ga_gam": 1.0, "ga_pw": 1.0, "ga_q": 1.0, "hc_e": 1.5, "holdage_cap": 0.9712508526439506, "holdage_th": 0.25073103183213685, "hw_a": -4.833333333333334, "hw_half": 51.932695284873475, "j_agg_pow": 4.220517945172583, "j_c1": 0.11994305455701491, "j_nerf_a": -2.266651862989442e-05, "j_nerf_c": 0.07443739821757173, "j_nerf_off": 0.15369105717534054, "j_triple_gain": 0.01930565188193239, "j_triple_gain_4k": 0.5356436393950172, "j_triple_pow": 1.005976267076746, "j_triple_tau": 135.97491132645644, "ja_coord_exp": -9.268498548764114e-05, "ja_gap_thr": 253.00356478769385, "ja_len_exp": 1.0047596122947928, "ja_len_floor": 4.074244535477681, "ja_norm": 5.981391018054386, "ln_eff_tail_ms": 0.0, "ln_note_level": 0.0, "mean_pow": 6.465267031930503, "mj_dilute": 0.08, "mj_dilute_exp": 0.9615171298692908, "note_chord": 1.0, "od_mult_ja": -1.0, "od_mult_jc": -0.37109374999999944, "od_mult_jm": 0.7504257038347726, "od_mult_p": 1.1264849156945338, "od_mult_r": 1.064323992348447, "od_mult_x": 1.1651306736110387, "out_a": 0.7126068194786057, "out_b": -0.9041441776349508, "p83_c": 2.667686959362696, "p93_c": 2.505172683584436, "p_boost": -1e-05, "p_boost_hi": 401.3793072521453, "p_boost_lo": 186.3466709871835, "p_burst3": 0.05749725160072005, "p_burst4": 0.041571581046874806, "p_bv_max": 1.023169107328028, "p_chw2": 0.6997350782823039, "p_chw3": 1.4710731528472405, "p_chw4": 0.82149995851254, "p_chw5": 0.8676070127257947, "p_chw6": 0.7474127532548505, "p_chw7": 1.03284160083206, "p_lam2": 0.006084380903675146, "p_lam3": 27.838293996532915, "p_sat_a": 10.690152688495372, "p_sat_b": 2.0349325289971496, "p_scale": 0.05862260059258437, "p_v_norm": -0.005007331887365899, "pp_div": 1.5280913205440017, "pp_n0": 2.882604709275971, "pp_scale": 0.9752438292174499, "pp_thr": 8.309978532525944, "r_I_off": 1.679847001293981, "r_I_steep": 3.8155719025104933, "r_I_w": 1.0611113361746765, "r_ain0": 1.402277599248007, "r_ain1": 0.8487725298502042, "r_ain2": 0.9889530992577216, "r_ain3": 1.4808396303580251, "r_coord_e": 0.6807568539174652, "r_cw_cross": 0.6899948287076584, "r_cw_hand": 0.42489506847315023, "r_cw_same": 0.9824539263359018, "r_cw_thumb": 0.3660514384223894, "r_dt_max": 5985.197267885601, "r_dtr_min": 0.015, "r_lock": 0.1775454477373913, "r_order_pen": 0.04982726415201301, "r_order_tau": 404.3308885287425, "r_same_col": 0.39414011153048933, "r_seq": 0.06596340070980779, "r_short_red": 0.10936100877002214, "r_short_thr": 440.09681230961536, "r_sim_tau": 10.0, "r_simul": 0.08534094291675064, "r_soft_edges": 1.0, "r_straddle": -0.11540999412449468, "r_tail": 0.02898542543998874, "r_tt": 3.5417544104085192, "read_clip_hi": 1.5, "read_clip_lo": 0.5, "read_n_win": 16.0, "read_tol": 0.18, "rec_half": 0.4886690846205094, "recov_w": 989.9492044110127, "recov_wl": 21003.231873446508, "s_p": 1.1440878056059884, "shd_w": 1071.1117107781824, "t_jack_mix": -0.35552500051452174, "t_s_off": 0.4819735114526039, "use_cbar_v2": 1.0, "use_cbv_holdtap": 1.0, "use_cbv_lockanchor": 1.0, "use_cbv_lockstack": 1.0, "use_cbv_overlap": 1.0, "use_cbv_shield": 1.0, "use_cbv_straddle": 1.0, "use_eye": 1.0, "use_hb": 1.0, "use_read": 0.0, "w83": 0.4815139944602175, "w93": 0.3605157897072774, "w_a": 60.794584215917084, "w_cb": 1716.856156378797, "w_ja": 0.0, "w_jc": -0.4781249999999999, "w_jm": 842.9060364136417, "w_p": 806.2241563795392, "w_r": 1349.4219390385326, "w_x": 939.2935347185421, "wmean": 2.1613377064577026, "x_amp": 0.14776064699735425, "x_cw0": 0.1460113252705887, "x_cw1": 0.3535388218642357, "x_cw2": 0.3389326726836199, "x_cw3": 0.04918990446028124, "x_din": -0.595854461464495, "x_dir_in": 0.2845860534263308, "x_dir_out": -0.016749922744166222, "x_dout": 0.9858637139438629, "x_fc_a": 0.541953977488367, "x_fc_floor": 0.04577642898224647, "x_fc_off": 60.317605380705, "x_fc_w": 1.6631718126735746, "x_jd_e": 1.0765985987293114, "x_jd_p": 0.0456784859552089, "x_jh_e": 1.6812589290379765, "x_jh_p": 1.0261744953668672, "x_jt": 0.5592172136082718, "x_jump_w": -0.852278272911138}}
 
 _PARAM_DEFAULTS = {
     # ---------------------------------------------------------------- OD
@@ -52,16 +53,32 @@ _PARAM_DEFAULTS = {
     "j_triple_tau": 120.0,     # ms; same-column triple bonus window
     "j_triple_pow": 1.0,
     "j_triple_gain": 0.0,      # 0 = off  (h_jack3 mechanism, time-series form)
-    # 同列三连增益，按谱面键数分别取值（0 表示关闭）。
-    # < 0 表示沿用 j_triple_gain 的值。
+    # per-frame variant: 4K wants the triple gain much lower than 7K
+    # (研究结论)。小于 0 表示继承 j_triple_gain。
     "j_triple_gain_4k": -1.0,
-    # 同列快对通道，并入迷你叠。按键数分别取值（0 表示该键数关闭；
-    # c_fj_4k 不沿用）。
+    # fast same-column (fj) channel added into Jm.  Per-frame coefficients
+    # (0 = off for that frame; c_fj_4k does NOT inherit).
     "c_fj": 0.0,
     "c_fj_4k": 0.0,
-    # 同手和弦密度，进入流分支的折扣项。
+    # RT-8 鲁棒性开关（0/1，手工设置，与 use_cbar_v2 同类，不参与数值优化）。
+    # 见 research/agents/rt8_fj.md。
+    # fj_bounded=1：把无界的快对价格 (1/g)(1-g/0.15) 换成有界线性指示量
+    #   clip(1-g/0.150,0,1) ∈ [0,1]（Roxy inverseGate 形状），去掉 g→0 的
+    #   奇点；值域变了（7K 均值 1.82→0.19），所以 c_fj / c_fj_4k 必须重调
+    #   （7K 1.1224→11.2237，4K 1.6385→11.4694）。0 = 旧行为，逐位不变。
+    "fj_bounded": 0.0,
+    # 同手和弦密度折扣曲线，进入 stream 分支。
     "d_sh": 0.0,
     "shd_w": 1000.0,           # ms smoothing window
+    # 手部感知和弦费（A4 双手并行公理）：单手多指紧握（手指牵制）附加费，
+    # 进入 stream 分支（系数 d_hc，0 = 关闭 = 现行行为；hc_e 是超加性指数，
+    # e > 1 保证固定键数下同手集中严格贵于双手分摊，纯跨手和弦不收费）。
+    # 手势尺寸 u_h 来自 note_chord 的按键场（1ms 分裂连续），note_chord=0
+    # 时回退到行级手部 popcount。载体说明：Xbar 列跨距定价手盲且被
+    # t_jack_mix<0 的 twist 门在连打/和弦区归零（CHORD-C G 组实测），
+    # 所以费用走 stream 分支而非 Xbar。
+    "d_hc": 0.0,
+    "hc_e": 1.5,
 
     # minijack: dilution by what else is going on around the jack
     "mj_dilute": 0.0,          # 0 = plain Sunny Jbar
@@ -82,22 +99,60 @@ _PARAM_DEFAULTS = {
     "p_lam3": 24.0,            # synchronous-note penalty
     "p_scale": 0.08,
     "p_lam2": 0.006,           # LN body weight (per ms of body)
-    "p_v_norm": 0.0,           # 0 表示按毫秒计，1 表示按间隔归一化
+    "p_v_norm": 0.0,           # 0 = delta form (x ms), 1 = normalised by gap
     "p_boost": 1.75e-7,
     "p_boost_lo": 160.0,
     "p_boost_hi": 360.0,
-    "p_bv_max": 1.0,           # 1 表示取两者较大值，0 表示相乘
+    "p_bv_max": 1.0,           # 1 = max(b, v) like delta; 0 = b*v
     "p_sat_a": 10.0,           # soft clamp: min(inc*anchor, max(inc, inc*p_sat_b - p_sat_a))
     "p_sat_b": 2.0,
     # per chord size multiplier (index 0 == size 1, fixed at 1.0)
     "p_chw2": 1.0, "p_chw3": 1.0, "p_chw4": 1.0,
     "p_chw5": 1.0, "p_chw6": 1.0, "p_chw7": 1.0,
-    # 和弦耦合（毫秒）：三角窗把和弦尺寸变成连续的有效尺寸（和弦
-    # 定价表、同手折扣项、双押密度率共用），后一行相对前一行的间隔折算
-    # 成新攻击的零点几分之一，连打的行数按攻击组计数。被拆成 1 毫秒多行
-    # 的和弦不再被完整重复计价。0 表示关闭（精确时间戳行为）。
+    # 和弦柔性耦合，毫秒：三角窗正负 chord_tau_c
+    # window turns chord size into a continuous effective size (chw table,
+    # SHd, chord2), a row dt ms after another is discounted to dt/tau_c of
+    # a new attack in Pbar, and jack nrows are counted in attack groups --
+    # a 1 ms chord split stops being a full re-pricing.
+    # 0 = off (legacy exact-timestamp chords).
     "chord_tau_c": 0.0,
-    # 短窗爆发通道（三音/四音爆发项）
+    # --- CHORD-A v2 (Phase-2, after CHORD-C's adversarial review).
+    # 0 = 完全沿用上面的行级 chord_tau_c 机制（发布行为逐位不变）。
+    # 1 = 按键级"手势"检测 + 手部结构化定价：
+    #   检测 u_h(r) = Σ_{j∈hand h} clip(1-|t_j-t_r|/τ,0,1)   h = L,R
+    #        （HAND 划分：0-2 左、4-6 右、3 拇指只属左手一次——mask&0b0001111；
+    #          行内自己的音符在三角窗内按权重 1 计入，所以孤立单键 u_h=1、
+    #          精确 k 连同手 u_h=k。B1 修复：勿再加 +n_h−1，否则双重计数成 2k−1）
+    #   定价 g = 1 + α·((u_L^P + u_R^P)^(1/P) − 1)，P = γ·q
+    #        （构造性单调、恒 ≥1、同手超加性、双手 p-范数并行、
+    #          g(1,0)=1 与发布表单键价一致）
+    #   SHd 用左右手各自的 u_h（修 CHORD-C R2：v1 用总质量，跨手双押
+    #   白吃同手折扣）；chord2 用 μ(手势尺寸)·wbar 软隶属。
+    # 仅当 chord_tau_c > 0 时生效。
+    "note_chord": 0.0,
+    # 攻击组计数软化（CHORD-C C4）：1 = Jc/Ja 的 nrows 用 Σ(1−w) 连续计数，
+    # 消除 τ 边界悬崖（28→29ms 实测 −0.144★ 阶跃）。0 = 现行 (wb==0) 硬门。
+    # 只在 chord_tau_c > 0 时有意义；两种设置都与 note_chord 正交。
+    "chord_soft_att": 0.0,
+    # 和弦行不做 minijack 稀释（CHORD-C C3：mj_dilute 把和弦行的 Jm 稀释
+    # 21%，导致"加一个同时键更难"公理倒挂）。1 = 和弦行（手势尺寸≥2）
+    # 的稀释因子取 1。0 = 现行（所有行同等稀释）。
+    "chord_no_dilute": 0.0,
+    # chord2 通道在 note_chord=1 下的软隶属开关：0 = 三角软隶属
+    # μ(gsz, wbar)（CHORD-A 默认，消除 size==2 硬门的 ±1ms 分裂）；
+    # 1 = 仍用硬门，但门开在手势尺寸上（消融对照用）。
+    # 实测：软隶属在 ±1ms 抖动下把 T4 逐图 max 中位从 0.104 抬到 0.417，
+    # 因为 μ 随 jitter 直接变化；硬门 0.104 与 legacy 相同。
+    "chord2_hard": 0.0,
+    # g 的四个物理参数（替换 p_chw2..7 六个键；d_sh 由 ga_gam 的同手
+    # 超线性承担，见 BLOCKS.chordg）。
+    #   α 同时性税总刻度（吸收发布表平均校准）
+    #   γ 同手尺寸超线性（手指奴役，γ>1）
+    #   q 双手并行度（q→∞ 纯瓶颈手；q=2 能量式合成）
+    #   pw 整体幂（1 = 物理形式）
+    # α 初值：发布表 (2..7) 均值 ≈ 0.94，同手 2 连 1+2^γ ≈ 2.46
+    "ga_alpha": 0.12, "ga_gam": 1.30, "ga_q": 3.0, "ga_pw": 1.0,
+    # short-window burst channel (3/4-note bursts, the `burst` / `lb` feature)
     "p_burst3": 0.0,
     "p_burst4": 0.0,
 
@@ -107,8 +162,9 @@ _PARAM_DEFAULTS = {
     "an_cubic": 5.0,
     "an_on_p": 1.0,            # strength of the column-imbalance multiplier
     "abar_scale": 1.0163,
-    # 0 表示相邻序号的列配对；1 表示相邻活跃列配对（4 键嵌入时也会跨过
-    # 空的拇指列）。保留作对照开关，不预设取值。
+    # 0 = pair frame-index-adjacent columns (v0.5.0delta shipped behaviour);
+    # 1 = pair adjacent ACTIVE columns (for 4K embeds this also spans the
+    #     empty thumb column 3).  Kept as an ablation switch, not assumed.
     "abar_active": 0.0,
     "abar_thr_lo": 0.02,
     "abar_thr_hi": 0.07,
@@ -118,8 +174,9 @@ _PARAM_DEFAULTS = {
     "abar_mx": 0.5,
     "abar_mx_thr": 0.11,
     "abar_mx_w": 0.6,
-    # 1 表示把中间段焊到连续形式，列对乘子在阈值处连续。
-    # 0 表示分段形式，在接缝处有跳变。
+    # 1 = weld the mid branch to c0 + k*(dd - thr_lo) + ... so the column-
+    # 列对乘子在 abar_thr_lo 处连续。
+    # 0 = legacy (c1 + k*dd; jumps by c1 + k*thr_lo - c0 at the seam).
     "abar_weld": 0.0,
 
     # --------------------------------------------------------------- Xbar
@@ -128,8 +185,9 @@ _PARAM_DEFAULTS = {
     "x_cw1": 0.35,
     "x_cw2": 0.25,
     "x_cw3": 0.225,
-    # 成对项的内切/外切拆分：内切指切换落点比起点更靠近拇指列，外切指
-    # 更远离。和弦参与的切换按有效列取半权。0/0 表示对称（无方向拆分）。
+    # inward/outward (内外切) split of the pairwise term: pair multiplier
+    # 1 + x_din*d+ + x_dout*d-, d = |e_from-3| - |e_to-3| (+1 full inward,
+    # -1 full outward, chord-involved pairs half).  0/0 = symmetric legacy.
     "x_din": 0.0,
     "x_dout": 0.0,
     "x_fc_a": 0.4,
@@ -140,10 +198,10 @@ _PARAM_DEFAULTS = {
     "x_jump_w": 0.0,           # 0 = off
     "x_jh_p": 0.45,           # same-hand penalty
     "x_jh_e": 1.5,           # same-hand distance exponent
-    "x_jt": 0.5536,            # 拇指桥接折扣
-    "x_jd_p": 0.0,             # 通用距离惩罚
+    "x_jt": 0.5536,            # thumb bridge
+    "x_jd_p": 0.0,             # generic distance penalty
     "x_jd_e": 1.0,
-    "x_dir_in": 0.0,           # 内切方向系数（朝向拇指列）
+    "x_dir_in": 0.0,           # inward-flow multiplier (toward col 3)
     "x_dir_out": 0.0,
 
     # --------------------------------------------------------------- Rbar
@@ -153,13 +211,17 @@ _PARAM_DEFAULTS = {
     "r_I_off": 0.75,
     "r_I_w": 0.8,
     "r_dt_max": 5000.0,
-    # 释放间隔定价的物理下限（秒）：用感知尺度的下限代替纯数值钳制。
-    # 0.0001 表示关闭。
+    # physical floor (seconds) for the dtr^-0.5 release-gap pricing
+    # 物理下限：以感知尺度下限替代原先纯数值的钳位。
+    # perception-scale minimum.  0.0001 = legacy clamp.
     "r_dtr_min": 0.0001,
-    # 近同时事件（尾部与头部）的混合带（毫秒）：协调指数线性插值，
-    # 不做硬判决。0 表示关闭。
+    # ms; blend zone for near-simultaneous next events (tail vs head):
+    # the coord exponent interpolates linearly instead of the 1e-9 hard
+    # 判定混合带。0 表示关闭。
     "r_sim_tau": 0.0,
-    # 1 表示截断处加余弦坡，零宽释放区间分得一行的份额。0 表示关闭。
+    # 1 = raised-cosine ramps on the r_dt_max / r_order_tau cutoffs and a
+    # 零宽释放区间给予单行份额。
+    # B2/B3/B5).  0 = legacy.
     "r_soft_edges": 0.0,
     "r_same_col": 0.26775,
     "r_coord_e": 0.71931,
@@ -192,8 +254,9 @@ _PARAM_DEFAULTS = {
     # Each sub-term additionally has its own `use_cbv_<term>` switch and its
     # own `cbv_<term>` weight, so terms ablate independently.
     "use_cbar_v2": 0.0,
-    # 1 表示按尾部时刻计数释放事件（不依赖网格的速率）。改变释放拥挤度
-    # 的尺度，开启后需要重新拟合权重。0 表示关闭。
+    # 1 = count churn release events on tail times (grid-free rate;
+    # 残留开关。会改变 churn 尺度，
+    # cbv_churn needs re-fitting when enabled.  0 = legacy.
     "churn_event_rate": 0.0,
     "cbv_w": 1000.0,           # smoothing window (ms) shared by all v2 terms
     # --- term gates + weights
@@ -209,7 +272,7 @@ _PARAM_DEFAULTS = {
     "cbv_sh_ln_w": 1.0,        # weight of a zero-length LN predecessor vs tap
     "cbv_sh_ln_tau": 120.0,    # ms; long LN predecessors stop being a shield
     "cbv_sh_lock": 1.0,        # amplification by held other columns
-    # --- 衩叠对矩阵 + 被钉手指权重
+    # --- straddle (衩叠) pair matrix + pinned-finger weights
     "cbv_str_sh_adj": 0.0,     # unused at d==2; kept for matrix completeness
     "cbv_str_sh_split": 1.0,   # (0,2) (4,6) -- the true straddle
     "cbv_str_1h_split": 0.45,  # (1,3) (3,5) -- thumb-bridged
@@ -237,10 +300,11 @@ _PARAM_DEFAULTS = {
     "cbv_ov_dt_max": 1500.0,   # ms; max head-to-head distance for a pair
     "cbv_ov_cap": 2000.0,      # ms; clamp on the priced overlap length
 
-    # ------------------------------------------------- 混合长键补充项
-    # 四条曲线级机制，针对 7 键混合与长键谱面。
-    # use_hb 为总开关；每项有自己的权重（0 表示关闭）。
-    # 按键数覆盖（0 表示沿用 7 键的值），与 a_p_4k 等规则相同。
+    # ------------------------------------------------- 混合与长键
+    # Four curve-level mechanisms targeting the 7K hb/ln gaps vs delta.
+    # use_hb = master gate; each term has its own weight (0 = off).
+    # Per-frame overrides (0 = inherit the 7K value), same pattern as
+    # a_p_4k / a_r_4k / a_cb_4k: LN physics differs across frames.
     "use_hb": 0.0,
     # release churn (concave), added into the Cbar curve
     "cbv_churn": 0.0,
@@ -277,8 +341,10 @@ _PARAM_DEFAULTS = {
     "a_c": 11.0205,            # C offset for Rbar
     "a_cb": 0.0,               # Cbar weight
     "a_cbc": 11.0205,
-    # 4 键谱面的覆盖系数（门控为 s.is_4k）。两种键数在流分支与长键定价
-    # 上取值不同：每个 *_4k 覆盖为 0 表示沿用共用值。
+    # Per-frame overrides for 4K-embedded charts (gate = s.is_4k).
+    # 7K and 4K diverge on stream/LN pricing: 4K high-end LN and speed are
+    # under-priced while 7K LN over-prices at the same coefficient.  Each
+    # *_4k override: 0 = inherit the shared value (legacy behaviour).
     "a_p_4k": 0.0,
     "a_r_4k": 0.0,
     "a_cb_4k": 0.0,
@@ -289,6 +355,22 @@ _PARAM_DEFAULTS = {
     "d_dt": 1.5,
     "d_b2": 0.3845,
 
+    # ------------------------------------------------- stamina (RT-4)
+    # Non-negative additive fatigue branch: D += c_stam * F, where F is a
+    # causal first-order IIR over the combine-level local intensity S
+    # (F_k = F_{k-1}*exp(-dt_k/stam_tau) + S_k, dt in ms).  Sustained
+    # pressure accumulates and saturates at ~S*tau/dt (~15-30 s with the
+    # default tau); gaps/low-density decay it exponentially (rest).  The
+    # branch is read inside combine() only -- c_stam = 0 (default) is the
+    # legacy model bit-for-bit, and both keys are NON_CURVE.
+    "c_stam": 0.0,
+    "stam_tau": 8000.0,        # ms; fatigue accumulation/decay time constant
+    # ms; anti-split discount on the impulse input: rows closer than
+    # stam_grp to their predecessor (jitter-smeared chords) contribute
+    # x*dt/stam_grp instead of the full x.  Must stay far below real
+    # successive-note gaps (>=50 ms in dense play).
+    "stam_grp": 30.0,
+
     # ----------------------------------------------------------- aggregate
     "agg_mode": 3.0,           # 0 percentile | 1 soft-max | 2 sigmoid | 3 power mean
     "agg_k": 4.0,              # mode1: lambda | mode2: sigmoid k | mode3: power
@@ -297,8 +379,41 @@ _PARAM_DEFAULTS = {
     "agg_nseg": 30.0,
     "agg_wc": 1.0,             # weight exponent on the local note count C
     "agg_gap_w": 1.0,          # weight exponent on the row gap
-    # 聚合前 D 的峰包络：D <- (1-env_w)*D + env_w * rolling_max(D, env_ms)。
-    # 0 表示关闭。
+    # --- AGG-B (修正幂平均族) 权重来源开关。默认严格保持现行行为。
+    # aggw_src: 0 = 现行 ±500ms 窗音符数 C；1 = 该行自身和弦尺寸 size
+    #           （完全局部、无窗；休息段/空行不存在 → 自然零权重）。
+    "aggw_src": 0.0,
+    # aggw_gap_cap: 毫秒（与 b.t / dt_diff 同单位，非秒）；>0 时把进入
+    #           权重的行间隔 gp 钳到该上限（远处孤立键的 gp 被钳小，
+    #           正常段内 gp 不受影响）。真实 gp：密集流 ~60-130ms，
+    #           p99 ~434ms，max ~11s → 有意义范围约 250-2000ms。
+    #           0 = 关闭 = 现行。
+    "aggw_gap_cap": 0.0,
+    # --- AGG-C/D（段落两级聚合 / 持续需求-容量）专属参数。全部只在
+    # agg_mode=4/5 下被读取，默认严格保持现行模式行为。
+    # 段落切分：静音 >= aggC_gap ms 即开新段落；段内按 aggC_ms 窗口对齐
+    # 到段首；行质量 = C**aggC_wc（永远不含墙钟时间）。
+    "aggC_ms": 3000.0,         # 段内窗口长度 ms
+    "aggC_gap": 1500.0,        # 段落切分静音阈值 ms
+    # --- AGG-D 精炼（P1.5）：按域几何覆盖。键数在整张谱面内一致
+    # （is_4k 逐行恒定），所以这几张谱面既"要么纯4K要么纯7K"，覆盖可按图
+    # 生效：4K 谱面用 aggC_ms_4k / aggC_gap_4k，其余（7K/6K）沿用全局
+    # aggC_ms / aggC_gap。**0 = 继承全局**（不是"窗口 0ms"）——
+    # 0 时解析为全局值，输出与 m4f 逐位相同（见 results/aggD_ref.py）。
+    # 语义：窗口/切段几何是墙钟尺度（ms，同 b.t / dt_diff），只影响
+    # 切段与窗格划分，从不进入权重。
+    "aggC_ms_4k": 0.0,         # 4K 段内窗口长度 ms；0 = 继承 aggC_ms
+    "aggC_gap_4k": 0.0,        # 4K 段落切分静音阈值 ms；0 = 继承 aggC_gap
+    "aggC_pw1": 4.0,           # 窗内幂平均指数
+    "aggC_pw2": 4.0,           # 跨窗幂平均指数（mode 4）
+    "aggC_wc": 1.0,            # 行质量的 C 指数
+    "aggC_gw": 0.0,            # 有界间隔因子指数：min(gp,aggC_gc)**gw。0=关
+    "aggC_gc": 400.0,          # 间隔因子钳位 ms（钳外间隔不再购买权重）
+    "aggC_hw": 1.0,            # 0/1 开关：质量是否含按住因子（不进 NM）
+    "aggC_tau": 4000.0,        # mode 5：疲劳恢复时间常数 ms
+    "aggC_kap": 1.0,           # mode 5：容量（峰值疲劳预算）
+    # 聚合前保留峰值的包络：
+    # D <- (1-env_w)*D + env_w * rolling_max(D, env_ms).  0 = off.
     "env_w": 0.0,
     "env_ms": 800.0,
     # percentile mode (agg_mode < 0.5)
@@ -313,28 +428,30 @@ _PARAM_DEFAULTS = {
     "pp_scale": 1.0944,
     "calib_a": 1.0,
     "calib_b": 0.0,
-    # 按住感知聚合权重：按住长键的行在聚合时降权。
+    # 按住感知的聚合权重
     "hw_a": 0.0,
     "hw_half": 30.0,
-    # ln_eff_tail_ms：长键有效尾部缩减（毫秒）。结构级参数：它改变行结构
-    # 的按住数组，所以放在 STRUCT_KEYS 里，单独处理，不放在普通参数组里。
+    # ln_eff_tail_ms: LN effective tail reduction (ms).  STRUCT-LEVEL: it
+    # changes s.held / s.heldmask / s.ln_body_ms, so it lives in STRUCT_KEYS
+    # and is tuned by grid + inner NM, never inside a plain NM block.
     "ln_eff_tail_ms": 0.0,
-    # ln_note_level 为 1 时，按住状态按每条长键的头尾数组构建，而不是按行
-    # 构建。行级构建会把与长键头同行的点键误标成长键头。结构级参数，
-    # 与 ln_eff_tail_ms 同级。0 表示行级构建。
+    # ln_note_level: 1 = build held/heldmask from per-note tail arrays
+    # 残留注记：行级聚合会把与长键同行的点键误标，
+    # sharing a row with an LN head as LN heads with the row's MAX tail).
+    # STRUCT-LEVEL like ln_eff_tail_ms.  0 = legacy row-level.
     "ln_note_level": 0.0,
-    # 读谱分支：间隔规整度曲线（默认关闭，保留作对照）
+    # read (眼难度) component -- legacy reg port (kept for ablation)
     "use_read": 0.0,         # 0 = off, 1 = on
-    "d_read": 0.0,           # 读谱系数（7 键）
-    "d_read_4k": 0.0,        # 读谱系数（4 键覆盖；0 表示与 7 键相同）
-    "read_tol": 0.18,        # 规整度容差
-    "read_n_win": 16.0,      # 局部中位窗（事件数）
-    "read_clip_lo": 0.5,     # 读谱修正项的裁剪范围
+    "d_read": 0.0,           # read coefficient (7K)
+    "d_read_4k": 0.0,        # read coefficient (4K, per-frame)
+    "read_tol": 0.18,        # regularity tolerance
+    "read_n_win": 16.0,      # local median window (events)
+    "read_clip_lo": 0.5,     # clip range for read modifier
     "read_clip_hi": 1.5,
-    # 视觉规整度：拍点对齐度，流分支内的密度门控交互
+    # eye (眼难度) -- E4 beat alignment, density-gated stream interaction
     "use_eye": 0.0,          # 0 = off, 1 = on
-    "d_eye": 0.0,            # 7 键系数
-    "d_eye_4k": 0.0,         # 4 键覆盖；0 表示与 7 键相同
+    "d_eye": 0.0,            # 7K coefficient (sign free)
+    "d_eye_4k": 0.0,         # 4K override; 0 = same as d_eye
     "eye_w_ref": 4000.0,     # local rate reference window (ms)
     "eye_w_s": 500.0,        # smoothing window (ms)
     "eye_tau": 0.2,          # alignment decay scale
@@ -347,9 +464,8 @@ DEFAULTS = _PARAM_DEFAULTS
 
 _PARAM_DEFAULTS_REF = _PARAM_DEFAULTS
 
-# 参数分组。各通道的键按前缀组织，供评分代码与验证脚本按组取用。
 BLOCKS: Dict[str, List[str]] = {
-    # od_mult_ja / w_ja / c_ja 不参与调整：长连通道被证明冗余，
+    # od_mult_ja、w_ja、c_ja 不参与调整：长连通道被证明冗余，
     # 它的形状参数保留默认值（继承语义），以保持旧参数文件的兼容。
     "od": [k for k in _PARAM_DEFAULTS if k.startswith("od_mult_")
            and k != "od_mult_ja"],
@@ -370,11 +486,18 @@ BLOCKS: Dict[str, List[str]] = {
     # 是 0/1 手工设置，用于对照实验，不参与数值优化。
     "sat_cbar_v2": [k for k in _PARAM_DEFAULTS if k.startswith("cbv_")],
     "gates": ["use_cbar_v2", "r_soft_edges", "abar_weld", "ln_note_level",
-              "churn_event_rate"] +
+              "churn_event_rate", "fj_bounded"] +
              [k for k in _PARAM_DEFAULTS if k.startswith("use_cbv_")],
     # 和弦耦合参数（密度通道的和弦尺寸、同手折扣项、混合补充项的双押
     # 密度率共用），单独成组，不放在上述通道组里。
     "chordsoft": ["chord_tau_c"],
+    # CHORD-A v2（手势级同时性检测 + 手部结构化定价）专属参数组。
+    # note_chord 是 0/1 开关（手工设置）；note_chord=1 时 p_chw2..7 与 d_sh
+    # 失效，由 ga_* 四参数取代，所以本组同时收 d_sh（其内容以正确符号进
+    # ga_gam 的同手超线性）与 chord_soft_att / chord_no_dilute 两个开关。
+    "chordg": ["note_chord", "chord_tau_c", "ga_alpha", "ga_gam", "ga_q",
+               "ga_pw", "chord_soft_att", "chord_no_dilute", "chord2_hard",
+               "d_sh", "d_hc", "hc_e"],
     "eye": ["d_eye", "d_eye_4k"],
     # cbv_churn / cbv_holdage carry the cbv_ prefix, so they live in the
     # sat_cbar_v2 block automatically; the hb block holds the rest.
@@ -383,7 +506,7 @@ BLOCKS: Dict[str, List[str]] = {
            "chord2_w", "rec_half", "recov_w", "recov_wl"],
     "combine": ["aj", "ap", "at", "cap_a", "cap_b", "c_jm", "c_jc",
                 "c_s", "s_p", "a_p", "a_r", "a_c", "a_cb", "a_cbc",
-                "a_p_4k", "a_r_4k", "a_cb_4k", "d_sh",
+                "a_p_4k", "a_r_4k", "a_cb_4k", "d_sh", "d_hc",
                 "t_jack_mix", "t_s_off", "d_b1", "d_ds", "d_dt", "d_b2"],
     "agg": ["agg_k", "agg_C", "agg_gamma", "agg_wc", "agg_gap_w",
             "p93_c", "w93", "p83_c", "w83", "wmean", "mean_pow",
@@ -391,10 +514,28 @@ BLOCKS: Dict[str, List[str]] = {
     "post": ["pp_n0", "pp_thr", "pp_div", "pp_scale", "calib_a", "calib_b",
              "out_a", "out_b"],
     "affine": ["out_a", "out_b", "calib_a", "calib_b"],
+    # AGG-B（修正幂平均族）专属条目：聚合权重来源开关 + 幂平均/按住参数。
+    # agg_wc 在 aggw_src=1 下是行和弦尺寸的指数（同一符号，两种语义）。
+    "aggB": ["agg_k", "agg_C", "agg_gamma", "agg_wc", "agg_gap_w",
+             "hw_a", "hw_half", "aggw_src", "aggw_gap_cap"],
+    # AGG-C/D（段落两级聚合族）专属条目：段落/窗口几何 + 两级幂指数 +
+    # 质量指数 + mode5 疲劳核。aggC_hw 是 0/1 开关，不参与数值优化。
+    "aggC": ["aggC_ms", "aggC_gap", "aggC_pw1", "aggC_pw2", "aggC_wc",
+             "aggC_gw", "aggC_gc", "aggC_tau", "aggC_kap",
+             "aggC_ms_4k", "aggC_gap_4k"],
+    # AGG-D 精炼专属条目（P1.5）：按域（4K）几何覆盖。单独成组，方便
+    # 只调覆盖而不动全局几何。
+    "aggD4k": ["aggC_ms_4k", "aggC_gap_4k"],
+    # AGG-D 精炼：全局几何微调（不动 4K 覆盖）。
+    "aggDgeo": ["aggC_ms", "aggC_gap"],
+    # RT-4 耐力分支：非负加法疲劳项（combine 内读取，非曲线级）。
+    "stam": ["c_stam", "stam_tau", "stam_grp"],
 }
 
-# 改变结构输出的参数。其他参数可以复用已缓存的结构数组（注释保持
-# 显式并经过审计：结构键如果漏进这个表，会让每次参数步进都变成全量重算）。
+# Keys whose change forces a structural (per-chart) recompute.  Everything
+# else can reuse the cached structural arrays.  (Kept explicit and audited:
+# a struct key missing from this list silently turns every NM step into a
+# 全量重算。)
 STRUCT_KEYS: List[str] = [
     "ja_gap_thr", "j_triple_tau", "r_dt_max", "r_short_thr",
     "cb_shield_tau", "r_order_tau", "agg_nseg",
@@ -471,7 +612,21 @@ NON_CURVE_KEYS: set = set(
      # stream branch), not in compute_curves -- they must NOT trigger a
      # curve recompute.  (use_hb and the *_w / *_sat / *_th / *_cap shape
      # params DO change the curves and stay curve-affecting.)
-     "c_chord2", "d_rec"}
+     "c_chord2", "d_rec",
+     # AGG-B aggregation-only weight-source switches: read exclusively inside
+     # aggregate(), so they must never trigger a curve recompute.
+     "aggw_src", "aggw_gap_cap",
+     # AGG-C/D sectioned-aggregation keys: also read exclusively inside
+     # aggregate() (window partition + two-level mean / demand bisection).
+     "aggC_ms", "aggC_gap", "aggC_pw1", "aggC_pw2", "aggC_wc", "aggC_hw",
+     "aggC_gw", "aggC_gc", "aggC_tau", "aggC_kap",
+     # AGG-D 精炼（P1.5）per-domain geometry overrides: read exclusively
+     # inside _aggc_windows(), so they must never trigger a curve recompute.
+     "aggC_ms_4k", "aggC_gap_4k",
+     # RT-4 stamina branch: c_stam / stam_tau are read exclusively inside
+     # combine() (the IIR runs on the combine-level S), so they must NOT
+     # trigger a curve recompute either -- same precedent as c_chord2/d_rec.
+     "c_stam", "stam_tau", "stam_grp"}
 # NB: use_eye is deliberately NOT here -- it gates EyeR computation inside
 # compute_curves, so it is curve-affecting.
 
@@ -748,6 +903,27 @@ MANIA_MODE = 3
 # 4K original column -> 7K frame column
 EMBED_4K_TO_7K = (1, 2, 4, 5)
 
+# 6K original column -> 7K frame column.  Default is the historical generic
+# embedding round(c*6/(K-1)) = (0, 1, 2, 4, 5, 6), i.e. the two hands sit in
+# frame {0,1,2} and {4,5,6} with the thumb column 3 empty.  Overriding this
+# table (or the SPM_EMBED_6K environment variable, same format) selects a
+# different physical embedding for 6K without touching 4K/7K parsing.
+EMBED_6K_TO_7K = (0, 1, 2, 4, 5, 6)
+
+
+def embed_6k() -> Tuple[int, ...]:
+    """Active 6K -> 7K embedding (env override wins over the module table)."""
+    raw = os.environ.get("SPM_EMBED_6K")
+    if not raw:
+        return EMBED_6K_TO_7K
+    try:
+        vals = tuple(int(v) for v in raw.replace(" ", "").split(","))
+    except ValueError:
+        return EMBED_6K_TO_7K
+    if len(vals) != 6 or len(set(vals)) != 6 or any(v < 0 or v > 6 for v in vals):
+        return EMBED_6K_TO_7K
+    return vals
+
 # Default OD -> hit window mapping is not used directly; we only need a
 # normalised "timing pressure" scalar.  Standard osu!mania windows (ms):
 OD_WINDOWS = {0: (22.0, 64.0, 97.0, 151.0, 188.0),
@@ -826,6 +1002,9 @@ def _col_from_x(x: float, key_count: int) -> int:
         return c
     if key_count == 4:
         return EMBED_4K_TO_7K[c]
+    if key_count == 6:
+        # explicit embedding table (default == the generic round() below)
+        return embed_6k()[c]
     # generic: spread evenly across the 7 tracks
     if key_count <= 1:
         return 3
@@ -967,7 +1146,7 @@ if __name__ == "__main__":
     import sys
     import time as _t
     p = sys.argv[1] if len(sys.argv) > 1 else \
-        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                      "tests", "cases", "bm_0001.osu")
     t0 = _t.perf_counter()
     nt = parse_file(p)
@@ -986,6 +1165,8 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
+# (rewritten: local)
+# (rewritten: local)
 
 CHART_STRIDE = 1 << 30          # ms offset between charts (>> any window)
 
@@ -1349,10 +1530,17 @@ def load_batch(name: str) -> Optional[Batch]:
 
 import numpy as np
 
+# (rewritten: local)
 
 K = 7
 N_BOUND = 8
 EPS = 1e-9
+
+# AGG-D (mode 4/5) window-key packing bound.  A section/window key is
+# `sec * _AGG_WIDX` + widx; widx = floor(offset_ms / aggC_ms) stays below
+# ~1e6 for any plausible chart (further bound by the aggC_ms >= 50 ms floor),
+# so a power-of-two offset keeps the product far inside int64.
+_AGG_WIDX = 1 << 22
 
 # popcount lookup for 7-bit row masks
 _POPCOUNT7 = np.array([bin(i).count("1") for i in range(128)], dtype=np.int32)
@@ -1404,7 +1592,7 @@ class Struct:
                  "heldmask", "ln_body_ms", "C", "Ks", "cumsize", "note_row",
                  "note_impulse", "col_chain", "bnd_chain", "tail", "is_4k",
                  "_tail_lo", "_tail_hi", "jlo", "jhi", "_wmean_ops",
-                 "_chord_ops",
+                 "_chord_ops", "_chordn_ops",
                  "n_notes", "duration", "dt_diff", "chart_same", "batch")
 
 
@@ -1460,10 +1648,12 @@ def _wcount(s: Struct, w: np.ndarray, W: float) -> np.ndarray:
     return cnt(tg + 0.5 * W) - cnt(tg - 0.5 * W)
 
 
-# ------------------------------------------------------ 和弦耦合
-# 精确时间戳的和弦在 1 毫秒扰动下会分裂。
-# chord_tau_c 大于 0 时，相邻行的音符按耦合权重分摊和弦尺寸，
-# 有效和弦尺寸连续变化。耦合算子挂在行结构上缓存。
+# ------------------------------------------------------ soft chord coupling
+# 注记：精确时间戳的和弦在 1 毫秒扰动下会分裂。
+# chord_tau_c > 0 gives notes in adjacent rows a graded chord-coupling
+# w(gap) = clip(1 - gap/tau_c, 0, 1) so effective chord size varies
+# continuously.  All of this lives in compute_curves (param-dependent);
+# only the cached (wf, wb) operator hangs off the struct.
 def _chord_coupling(s: Struct, tau_c: float):
     """(wf, wb): forward/backward adjacent-row coupling weights.
 
@@ -1528,6 +1718,216 @@ def _tri_window_count(s: Struct, val: np.ndarray, tau_c: float) -> np.ndarray:
         np.nan_to_num(left + right, nan=0.0, posinf=0.0, neginf=0.0), 0.0)
 
 
+# ------------------------------------------------- key-level simultaneity field
+# CHORD-A (v1.1.0 Phase-2): 按键级同时性质量场。
+#
+# 旧的 chord_tau_c 机制是在**行**上做的：先把相同时间戳的音符合成一行，
+# 再用三角窗对"行"计数。1 毫秒的抖动会把一个和弦拆成两行，行的有效尺寸
+# 就从 k 掉到 1+近邻耦合（u 的跳变 ~1.7%/1ms），定价随之跳变。
+#
+# 这里的机制在**按键**上定义：
+#     m(i) = sum_{j != i} K((t_j - t_i)/tau) * W(col_i, col_j)
+#     u(i) = 1 + m(i)              # 每个音符自己的"蕴含和弦尺寸"
+#     行的 u = 该行各音符 u(i) 的 (均值 | 最大) 聚合
+# 于是"拆成两行"与"合在一行"给出**相同**的 u（极限意义下）：两个音符
+# 相距 s 时，合并行 u=2(1-s/tau)，拆开后 u=(1+w)+(1+w) → 2(1+w)，
+# s→0 时 2(1+w) → 2。因此 SR(split) 在 s=0 处连续，±1ms 不再有硬分裂。
+#
+# 精确和弦（同一时间戳 k 个音符）在这个场里自然得到 u = k，与旧机制的
+# 行为一致；u 连续地覆盖 [1, K]，所以 2-7 押被同一个机制统一处理。
+def _note_kernel(x: np.ndarray, mode: int) -> np.ndarray:
+    """Simultaneity kernel K(x), x = |dt|/tau >= 0 (0 outside |dt| <= tau).
+
+    mode 0 = triangular clip(1-x, 0, 1) -- the same kernel the legacy
+    chord_tau_c path used, so switching mechanisms changes only the
+    row->note mapping.  mode 1 = smoothstep 1 - x^2(3-2x) (C1, steeper
+    core).  mode 2 = raised cosine 0.5(1+cos(pi*x)).
+    """
+    x = np.clip(np.asarray(x, dtype=np.float64), 0.0, 1.0)
+    if mode == 1:
+        return 1.0 - x * x * (3.0 - 2.0 * x)
+    if mode == 2:
+        return 0.5 * (1.0 + np.cos(np.pi * x))
+    return 1.0 - x
+
+
+# ------------------------------------------- gesture field (CHORD-A v2)
+def _row_gesture(b, s: Struct, tau: float) -> tuple:
+    """Gesture (attack-group) simultaneity -- detection layer, hand-split.
+
+    CHORD-A Phase-2 **v2**, after CHORD-C's adversarial review.  v1 summed a
+    pairwise kernel per note into a "per-note effective chord size" u(i) and
+    priced g(u).  Two reviewed facts retired that design:
+
+      R1  with a scalar column weight, aggregating the per-note field back to
+          rows is *pointwise identical* to the legacy row-level triangular
+          window count (measured max|delta| = 7e-9).  A sum of pairwise
+          kernels is not an attack-group partition, so it carries no new
+          information -- and pricing every row of a split chord at the full
+          group size double-counts the gesture.
+      C5  pricing a bare note count is hand-blind: it cannot express the most
+          basic two-hand fact (a single-hand stack is worse than the same
+          notes split across the hands).
+
+    v2 therefore separates detection from pricing.
+
+    Detection (this function): a row's gesture is its own notes plus the
+    notes of rows within tau, each weighted by the triangular kernel
+    clip(1-|dt|/tau, 0, 1), summed per hand over the HAND partition
+    (cols 0-2 + thumb 3 = left, 4-6 = right):
+
+        u_h(r) = sum_{j in hand h} K(|t_j - t_r|/tau)          h = L, R
+
+    so u_h is 1 for a lone note of that hand and k for an exact k-stack, and
+    slides continuously in between (this is the ±1 ms continuity requirement:
+    a chord split across two rows keeps u_L/u_R at their window-weighted
+    values instead of jumping).
+
+    Pricing (see `_chord_g`): g = 1 + alpha*((u_L^P + u_R^P)^(1/P) - 1),
+    P = gamma*q -- constructive: >= 1 always, superset-monotone, single-hand
+    superadditive (gamma > 1), two-hand subadditive (p-norm), and exactly 1
+    for an isolated single.
+
+    Returns (u_l, u_r, gsz, wbar, wb_row):
+      u_l/u_r  per-row hand gesture sizes, u_h = w_h + (n_h - 1), continuous
+               through the row seam
+      gsz      per-row gesture size = u_l + u_r, i.e. the row's keys plus the
+               same-hand neighbours' kernel weights
+      wbar     per-row gesture coherence = (gsz - 1)/(own keys - 1): 1 for a
+               one-row gesture, 0 for k keys spread over k rows (3 keys over
+               3 rows are still 3 keys, but not one simultaneous gesture)
+      wb_row   backward attack weight, computed exactly as the legacy
+               `_chord_coupling` does (CHORD-C R3: the v1 code passed an
+               always-true row mask here and degenerated to the per-row d,
+               re-introducing a 1 ms discontinuity).
+    """
+    n = s.n
+    u_l = np.ones(n, dtype=np.float64)
+    u_r = np.ones(n, dtype=np.float64)
+    gsz = np.ones(n, dtype=np.float64)
+    wbar = np.ones(n, dtype=np.float64)
+    wb_row = np.zeros(n, dtype=np.float64)
+    npop = b.note_t.size
+    if npop == 0 or tau <= 0.0:
+        return u_l, u_r, gsz, wbar, wb_row
+
+    nchart = b.note_chart.astype(np.int64)
+    # Global note axis.  Chart-local times restart at 0, so they are not
+    # globally sorted.  The offset must (a) exceed the longest chart and
+    # (b) stay small enough that float64 keeps millisecond resolution --
+    # a 1e7 ms stride is exactly at the double-precision edge and destroys
+    # the field on later charts (measured: chart 0 fine, chart 1 empty).
+    # 5e5 ms = 8.3 min per chart, int64-exact and far beyond any real chart.
+    stride = 500000
+    gt = (b.note_t.astype(np.int64)
+          + stride * nchart).astype(np.float64)
+    # s.starts is already the per-chart row start (indexed by chart id), so
+    # the global row of a note is simply starts[chart] + local row.  (The
+    # earlier `repeat(starts, counts)` rebuild triple-counted each start.)
+    r = s.starts[nchart] + b.note_row
+
+    # u_h(r) = w_h(r), where
+    #   w_h(r) = triangular +-tau window count of hand h's key presses at row r
+    #            (includes the row itself, each key weighted 1 at distance 0).
+    # So a lone key of a hand gives u_h = 1, an exact k-stack gives u_h = k,
+    # and a gesture spread over adjacent rows keeps its window-weighted size.
+    # (B1 fix, CHORD-C final review: the row's own keys are already counted at
+    # weight 1 inside the triangular window, so an extra "+ n_h - 1" term would
+    # double-count them -- an exact same-hand k-stack read 2k-1 and a split
+    # cross-hand gesture read gsz=1, invisible to the chord2 gate.)
+    msk = s.mask.astype(np.int32)
+    left = _POPCOUNT7[msk & 0b0001111].astype(np.float64)
+    right = _POPCOUNT7[msk & 0b1110000].astype(np.float64)
+    u_l = _tri_window_count(s, left, tau)
+    u_r = _tri_window_count(s, right, tau)
+    u_l = np.maximum(u_l, 0.0)
+    u_r = np.maximum(u_r, 0.0)
+    gsz = u_l + u_r
+
+    # integer note count per row -> mean pair weight: gsz - 1 is
+    # sum of kernel weights over the OTHER notes, so dividing by count - 1
+    # gives the average weight of a pair (1 = one simultaneous row).
+    ncnt = np.maximum(np.bincount(r, minlength=n).astype(np.float64), 1.0)
+    wbar = np.where(ncnt > 1.0,
+                    np.maximum(gsz - 1.0, 0.0) / np.maximum(ncnt - 1.0, 1e-12),
+                    1.0)
+    wbar = np.clip(wbar, 0.0, 1.0)
+
+    # attack mask: a note is a new attack iff nothing in the PREVIOUS row
+    # couples to it (legacy `wb == 0`) -- note_row is non-decreasing, so
+    # first-of-row is exactly that test.
+    first = np.zeros(npop, dtype=bool)
+    first[0] = True
+    first[1:] = b.note_row[1:] != b.note_row[:-1]
+    first_row = np.zeros(n, dtype=bool)
+    first_row[r[first]] = True
+    cur = np.zeros(n, dtype=np.int64)          # row's first note index
+    cur[r[first]] = np.flatnonzero(first)
+    prev = np.zeros(n, dtype=np.int64)         # previous row's first note
+    prev[1:] = cur[:-1]
+    has_prev = np.zeros(n, dtype=bool)         # False on each chart's first row
+    has_prev[1:] = np.diff(nchart[cur]) == 0
+    gap = np.abs(gt[cur] - gt[prev])
+    wb_row = np.where(has_prev & first_row,
+                      np.clip(1.0 - gap / tau, 0.0, 1.0), 0.0)
+    return u_l, u_r, gsz, wbar, wb_row
+
+
+def _row_gesture_cached(b, s: Struct, p: dict) -> tuple:
+    """Memoised `_row_gesture` on the struct (same pattern as `_chord_ops`).
+
+    Only tau enters: the hand split is structural (the column masks), so the
+    pricing parameters gc_*/ga_* never invalidate this cache.
+    """
+    key = round(float(p["chord_tau_c"]), 6)
+    ops = getattr(s, "_chordn_ops", None)
+    if ops is None:
+        ops = {}
+        s._chordn_ops = ops
+    got = ops.get(key)
+    if got is None:
+        got = _row_gesture(b, s, key)
+        if len(ops) > 8:
+            ops.clear()
+        ops[key] = got
+    return got
+
+
+def _chord_g(u_l: np.ndarray, u_r: np.ndarray, p: dict) -> np.ndarray:
+    """Hand-structured, constructive-monotone chord price (note_chord == 1).
+
+        g(u_L, u_R) = 1 + alpha * ((u_L**P + u_R**P)**(1/P) - 1),  P = gamma*q
+
+    Replaces the p_chw2..7 table (6 free keys) AND the d_sh same-hand
+    discount curve with 4 physical parameters:
+
+      alpha  simultaneity-tax scale (absorbs the table's average calibration)
+      gamma  single-hand size superlinearity, gamma >= 1 (finger enslavement:
+             the marginal finger of a stack costs more than the first)
+      q      two-hand parallelism, q >= 1 (q -> inf = pure bottleneck hand;
+             q = 2 = energy-style combination)
+      pw     optional flat exponent on the whole count, 1 = the physical form
+
+    Constructive guarantees (CHORD-C §1.2):
+      A1 superset monotone -- alpha, gamma, q, pw > 0 => dg/du_h >= 0;
+      A4 two-hand parallel  -- g(2,0) = 1+alpha*2**gamma  >  g(1,1)
+                               = 1+alpha*2**(1/P)  for gamma > 1/P;
+      non-negative and >= 1 everywhere (the released table is not: u >= 5.5
+      is priced negative by an unconstrained quadratic);
+      g(1,0) = 1 exactly -- an isolated single keeps the released single price,
+      so the family is calibration-compatible with the m4f baseline.
+    """
+    al = float(p.get("ga_alpha", 0.12))
+    ga = max(float(p.get("ga_gam", 1.30)), 1e-3)
+    q = max(float(p.get("ga_q", 3.0)), 1.0)
+    pw = max(float(p.get("ga_pw", 1.0)), 1e-3)
+    ul = np.maximum(np.asarray(u_l, dtype=np.float64), 0.0)
+    ur = np.maximum(np.asarray(u_r, dtype=np.float64), 0.0)
+    P = max(ga * q, 1e-3)
+    lam = np.power(np.power(ul, P) + np.power(ur, P), 1.0 / P)
+    return 1.0 + al * np.power(np.maximum(lam - 1.0, 0.0), pw)
+
+
 def _edge_ramp(x, cutoff) -> np.ndarray:
     """Raised-cosine fade: 1 up to 80% of `cutoff`, 0 at/above `cutoff`.
 
@@ -1542,8 +1942,11 @@ def _edge_ramp(x, cutoff) -> np.ndarray:
 def _abar_val(dd, mx, p) -> np.ndarray:
     """Abar column-pair multiplier.
 
-    abar_weld 为 1 时中间段取连续形式，在低阈值处连续；为 0 时取分段
-    形式，在接缝处有跳变。高阈值处两种形式都由 min(., 1) 饱和保证连续。
+    abar_weld 等于 1 时，中间分支变为
+    c0 + k*(dd - thr_lo) + mx*mx, so val is continuous at thr_lo by
+    construction.  Legacy (0): c1 + k*dd + mx*mx, which jumps by
+    c1 + k*thr_lo - c0 at the seam.  The thr_hi seam is welded in both
+    variants by the min(., 1) saturation.
     """
     lo = np.minimum(p["abar_c0"] + p["abar_mx"] * mx, 1.0)
     if p.get("abar_weld", 0.0):
@@ -1677,8 +2080,12 @@ def build_struct(b, p: dict | None = None) -> Struct:
     # effective end by this amount (ms) for held/density purposes only.
     # Release calculations (Rbar) still use the true ln_end.
     ln_eff = float((p or {}).get("ln_eff_tail_ms", 0.0))
-    # ln_note_level 为 1 时，按住状态按每条长键的头尾数组构建；行级构建
-    # 会把与长键头同行的点键误标成长键头。0 表示行级构建。
+    # ln_note_level 注记：旧的行级做法
+    # is_ln/ln_end aggregates mislabel every tap sharing a row with an LN
+    # head as an LN head carrying the row's MAX tail, inflating held on
+    # chord-LN charts (~-37% body coverage when a 1 ms perturbation
+    # separates the chords).  1 = build held/heldmask from the per-note
+    # tail arrays (true head/tail/col per LN).  0 = legacy row-level.
     note_level = float((p or {}).get("ln_note_level", 0.0)) != 0.0
     held = np.zeros(n)
     heldmask = np.zeros(n, dtype=np.int32)
@@ -1800,10 +2207,35 @@ def build_jack_stats(b, s: Struct, p: dict) -> list:
     # 之间的行数翻倍，双押叠通道的负载也不再减半。
     tau_c = float(p.get("chord_tau_c", 0.0))
     att_cum = None
+    att_row = None
     if tau_c > 0.0:
         wf, wb = _chord_coupling(s, tau_c)
-        att_cum = np.concatenate(
-            ([0.0], np.cumsum((wb == 0.0).astype(np.float64))))
+        if p.get("chord_soft_att", 0.0) >= 0.5:
+            # CHORD-C C4: the attack-group counter `(wb == 0)` is a HARD gate.
+            # Raising tau past a row gap moves that row from "absorbed" to
+            # "new attack" in one step -- measured as a -0.144* cliff at
+            # 28 -> 29 ms (nrows doubles, load halves).  Count each row by
+            # how much of an attack it actually is, 1 - w, which is exactly
+            # 1 at wb == 0 and 0 for a fully absorbed row, so the cliff
+            # becomes a continuous ramp.  NOTE: att_row = 1 - wb, NOT the
+            # wb of `_row_gesture` (which is already 1 - w) -- same quantity,
+            # different convention.
+            att_row = 1.0 - wb
+        else:
+            att_cum = np.concatenate(
+                ([0.0], np.cumsum((wb == 0.0).astype(np.float64))))
+    att_soft_cum = (None if att_row is None else
+                    np.concatenate(([0.0], np.cumsum(att_row))))
+    # CHORD-C C3 (A1 superset monotonicity): mj_dilute divides the minijack
+    # channel by the chord load on the row (other/nrows), so ADDING a
+    # simultaneous key to a jack row LOWERS that row's Jm -- measured 21% on
+    # a 2-chord stream, which is what makes a 2-chord stream score below a
+    # single-note stream at equal rate.  When chord_no_dilute is on, rows
+    # that carry a real gesture (>= 2 notes, from the chord field) skip the
+    # dilution.  Requires note_chord; 0 = legacy.
+    chord_row = None
+    if p.get("chord_no_dilute", 0.0) >= 0.5 and p.get("note_chord", 0.0) >= 0.5:
+        chord_row = _row_gesture_cached(b, s, p)[2] >= 2.0
     # 同列三连增益按谱面键数分别取值：7 键与 4 键各一个系数，
     # 4 键系数小于 0 时表示沿用 7 键的值。
     g7 = float(p["j_triple_gain"])
@@ -1822,6 +2254,9 @@ def build_jack_stats(b, s: Struct, p: dict) -> list:
         gs = np.maximum(np.where(valid, g, 1.0), 1e-4)
         if att_cum is not None:
             nrows = np.maximum(att_cum[pos[1:]] - att_cum[pos[:-1]], 1.0)
+        elif att_soft_cum is not None:
+            nrows = np.maximum(att_soft_cum[pos[1:]] - att_soft_cum[pos[:-1]],
+                               1.0)
         else:
             nrows = np.maximum(pos[1:] - pos[:-1], 1).astype(np.float64)
         total = s.cumsize[pos[1:]] - s.cumsize[pos[:-1]]
@@ -1839,14 +2274,33 @@ def build_jack_stats(b, s: Struct, p: dict) -> list:
             trip[:-1] = np.where(
                 same3, np.maximum(0.0, 1.0 - span_s / (2.0 * h3_tau)), 0.0)
         # fast same-column (fj): pairs with gap < 150 ms priced (1/g)(1-g/0.15)
+        #
+        # RT-8 (robustness): the legacy price is UNBOUNDED as g -> 0 -- a pair
+        # 1 ms apart is priced ~1000x a 100 ms pair, so any pair at (almost)
+        # an identical timestamp -- real charts do contain them: 2 ms in 4K
+        # bm4k_0261, 1 ms in six 6K charts -- is a ~5*10^2..10^3 spike in a
+        # channel whose typical value is O(1), and it stays a spike under any
+        # sub-millisecond perturbation.  fj_bounded=1 replaces the hyperbolic
+        # price with the bounded linear indicator
+        #     clip(1 - gs/0.150, 0, 1)                     (Roxy's inverseGate)
+        # -- the same shape ordering in gs, no singularity, range [0,1].  The
+        # value range changes (mean 1.82 -> 0.19 on 7K), so c_fj / c_fj_4k
+        # must be refitted for it (7K 1.1224 -> 11.2237, 4K 1.6385 -> 11.4694;
+        # see research/agents/rt8_fj.md).  0 = legacy, bit-identical.
         cid_gap = c["cid"][:-1]
-        fj = np.where(same_step & (gs < 0.150),
-                      (1.0 / gs) * np.maximum(1.0 - gs / 0.150, 0.0), 0.0)
+        if p.get("fj_bounded", 0.0) >= 0.5:
+            fj = np.where(same_step & (gs < 0.150),
+                          np.clip(1.0 - gs / 0.150, 0.0, 1.0), 0.0)
+        else:
+            fj = np.where(same_step & (gs < 0.150),
+                          (1.0 / gs) * np.maximum(1.0 - gs / 0.150, 0.0), 0.0)
         # per-gap triple gain by frame
         tgain = np.where(is4k_chart[cid_gap], g4k, g7)
         stats.append(dict(pos=pos, gs=gs, valid=valid, nrows=nrows,
                           other=other, load=total / nrows, runlen=runlen,
                           trip=trip, tgain=tgain, fj=fj, xr=xrow[pos[:-1]],
+                          chord_row=(None if chord_row is None
+                                     else chord_row[pos[:-1]]),
                           kern=_jack_kernel(gs, xrow[pos[:-1]], p,
                                             float(p["od_mult_jm"]))))
     return stats
@@ -1894,9 +2348,11 @@ def compute_curves(b, s: Struct, p: dict) -> dict:
             if kind == "plain":
                 mod = np.ones(st["pos"].size - 1)
             elif kind == "mj":
-                mod = (1.0 / (1.0 + mj_dilute *
-                              np.power(st["other"] / st["nrows"], mj_exp))
-                       * (1.0 + st["tgain"] * st["trip"]))
+                dil = (1.0 / (1.0 + mj_dilute *
+                              np.power(st["other"] / st["nrows"], mj_exp)))
+                if st.get("chord_row") is not None:
+                    dil = np.where(st["chord_row"], 1.0, dil)
+                mod = dil * (1.0 + st["tgain"] * st["trip"])
             elif kind == "cj":
                 mod = np.power(np.maximum(st["load"], 1e-6) / cj_norm, cj_exp)
             else:  # "ja"
@@ -1929,10 +2385,11 @@ def compute_curves(b, s: Struct, p: dict) -> dict:
     Jbar = jack_channel("plain", w_jm, od_jm)
     Jm = jack_channel("mj", w_jm, od_jm) if "mj" in need else Jbar
 
-    # fast same-column (fj) channel: rapid same-column pairs.  Per-frame:
+    # fast same-column (fj) channel: rapid same-column pairs are priced below
+    # 同列快对通道。按分帧分别计价：
     # c_fj for 7K rows, c_fj_4k for 4K rows (0 = off for that frame).
     # NB: FJ is merged into Jm BEFORE the Jc/Ja fallbacks below, so a
-    # fallback always captures the final Jm.
+    # 回退拿到的永远是并入后的最终 Jm。
     c_fj = float(p.get("c_fj", 0.0))
     c_fj_4k = float(p.get("c_fj_4k", 0.0))
     if c_fj != 0.0 or c_fj_4k != 0.0:
@@ -1954,14 +2411,28 @@ def compute_curves(b, s: Struct, p: dict) -> dict:
     xp = np.power(xrow, float(p["od_mult_p"]))
     d = s.dt
     tau_c = float(p.get("chord_tau_c", 0.0))
+    note_chord = tau_c > 0.0 and p.get("note_chord", 0.0) >= 0.5
+    if note_chord:
+        u_l_n, u_r_n, gsz_n, wbar_n, wb_row_n = _row_gesture_cached(b, s, p)
     d_fp = d
     if tau_c > 0.0:
-        wf, wb = _chord_coupling(s, tau_c)
-        # the synchronous-note term uses the gap to the next ATTACK (rows
-        # with no coupling from their predecessor), skipping rows absorbed
-        # into this row's chord group -- otherwise a split chord's
-        # carrying row reads an artificially tiny interval and loses fp.
-        att_idx = np.flatnonzero(wb == 0.0)
+        if note_chord:
+            # legacy attack mask == (nothing in the previous row couples
+            # into this row), i.e. the backward coupling weight is 0 (the
+            # row after a collapsed group still has its own predecessor, so
+            # an always-true "first note of row" test would degenerate to the
+            # per-row interval -- CHORD-C R3).  wb_row is the coupling weight
+            # itself, so the mask is `wb_row == 0`, NOT `wb_row > 0` -- the
+            # inverted test kept every row and cost T4 a factor of 3.6.
+            att = 1.0 - wb_row_n
+            att_idx = np.flatnonzero(wb_row_n <= 0.0)
+        else:
+            wf, wb = _chord_coupling(s, tau_c)
+            # the synchronous-note term uses the gap to the next ATTACK (rows
+            # with no coupling from their predecessor), skipping rows absorbed
+            # into this row's chord group -- otherwise a split chord's
+            # carrying row reads an artificially tiny interval and loses fp.
+            att_idx = np.flatnonzero(wb == 0.0)
         j = np.searchsorted(att_idx, np.arange(n), side="right")
         has = j < att_idx.size
         na = att_idx[np.minimum(j, att_idx.size - 1)]
@@ -1977,30 +2448,66 @@ def compute_curves(b, s: Struct, p: dict) -> dict:
                    1.0 + p["p_boost"] * (r - lo) * np.power(r - hi, 2.0), 1.0)
     vv = 1.0 + p["p_lam2"] * s.ln_body_ms / \
         np.power(np.maximum(s.dt_ms, 1.0), float(p["p_v_norm"]))
-    chw = np.ones(K + 1)
-    chw[2:K + 1] = [p.get(f"p_chw{i}", 1.0) for i in range(2, K + 1)]
-    if tau_c > 0.0:
-        # 和弦连续化：
-        #  * u 为三角窗内的音符数，即有效和弦尺寸（被拆成几毫秒多行的
-        #    和弦仍保持接近完整的组尺寸）；定价表在 u 处线性插值。
-        #  * att 为攻击折扣：后一行相对前一行只计零点几分之一个新攻击
-        #    （被前一行的和弦组吸收），否则密度的 1/d 强度会把一个拆开
-        #    的和弦算成多次完整攻击。折扣只作用于速率部分：长键身体增益
-        #    跟随每行自己的区间（行求和下与网格划分无关），不能打折，
-        #    否则身体质量会搬到被折扣的子行上。
-        u = np.clip(_tri_window_count(s, s.size.astype(np.float64), tau_c),
-                    1.0, float(K))
-        i0 = np.minimum(u.astype(np.int64), K - 1)
-        frac = u - i0
-        chw_u = chw[i0] * (1.0 - frac) + chw[i0 + 1] * frac
-        att = 1.0 - wb
+    q = np.minimum(d_fp - xp / 2.0, xp / 6.0)
+    fp = np.power(np.maximum(p["p_scale"] / xp *
+                             (1.0 - (p["p_lam3"] / xp) * q * q), 0.0), 0.25)
+    r = 7.5 / d
+    lo, hi = float(p["p_boost_lo"]), float(p["p_boost_hi"])
+    bst = np.where((r > lo) & (r < hi),
+                   1.0 + p["p_boost"] * (r - lo) * np.power(r - hi, 2.0), 1.0)
+    vv = 1.0 + p["p_lam2"] * s.ln_body_ms / \
+        np.power(np.maximum(s.dt_ms, 1.0), float(p["p_v_norm"]))
+    if note_chord:
+        # CHORD-A v2 pricing.  The v1 form `att * g * (rate stuff)` broke A1
+        # superset monotonicity: `att` multiplies the whole event price and a
+        # chord row carries a LONGER interval than a single's, so a 2-chord
+        # stream at a matched onset rate came out CHEAPER than the single
+        # stream (-1.17* at 50 ms onsets).  The legacy code never had that
+        # problem because its chord factor is a SEPARATE unitless multiplier
+        # applied after the attack discount:
+        #     inc = (1/d) * fp * chw_u * [att*rate + (vv-1)]
+        # This branch keeps exactly that structure -- `chw_u` = g and `mix`
+        # = the legacy single-key mix -- so the chord tax cannot be scaled
+        # away by the discount, and with g == 1 the expression is
+        # character-for-character the legacy single-key price.
         if p["p_bv_max"] > 0.5:
             mix = att * np.maximum(bst, 1.0) + np.maximum(vv - 1.0, 0.0)
         else:
             mix = att * bst * vv
+        chw_u = _chord_g(u_l_n, u_r_n, p)
     else:
-        chw_u = chw[np.minimum(s.size, K)]
-        mix = np.maximum(bst, vv) if p["p_bv_max"] > 0.5 else bst * vv
+        chw = np.ones(K + 1)
+        chw[2:K + 1] = [p.get(f"p_chw{i}", 1.0) for i in range(2, K + 1)]
+        if tau_c > 0.0:
+            # 分级和弦定价：
+            #  * u = triangular +-tau_c window note count = effective chord
+            #    size (a chord split into rows a few ms apart keeps ~its full
+            #    group size); the p_chw* table is linearly interpolated at u.
+            #  * att = attack discount: a row dt ms after another is only
+            #    dt/tau_c of a new attack (absorbed into the previous row's
+            #    chord group) -- Pbar's 1/d intensity would otherwise price a
+            #    split chord as k full attacks.  The discount applies to the
+            #    RATE part of mix only: the LN-body occupation gain (vv - 1)
+            #    follows each row's own interval (its sum over rows is
+            #    grid-split invariant) and must not be discounted -- otherwise
+            #    the body mass migrates onto discounted sub-rows.
+            u = np.clip(_tri_window_count(s, s.size.astype(np.float64), tau_c),
+                        1.0, float(K))
+            i0 = np.minimum(u.astype(np.int64), K - 1)
+            frac = u - i0
+            chw_u = chw[i0] * (1.0 - frac) + chw[i0 + 1] * frac
+            att = 1.0 - wb
+            if p["p_bv_max"] > 0.5:
+                mix = att * np.maximum(bst, 1.0) + np.maximum(vv - 1.0, 0.0)
+            else:
+                mix = att * bst * vv
+        else:
+            chw_u = chw[np.minimum(s.size, K)]
+            mix = np.maximum(bst, vv) if p["p_bv_max"] > 0.5 else bst * vv
+    # NB: for note_chord the chord price is already inside `mix` (the tax must
+    # ride the UN-discounted rate or a chord row's longer interval makes a
+    # 2-chord stream cheaper than the single stream -- A1), and chw_u is left
+    # at 1 so it is not applied a second time here.
     inc = (1.0 / d) * fp * chw_u * mix
     anchor_mult = 1.0 + p["an_on_p"] * np.minimum(
         s.anchor_raw - p["an_a0"],
@@ -2017,8 +2524,9 @@ def compute_curves(b, s: Struct, p: dict) -> dict:
     A = np.ones(n)
     dk = s.dcol
     act = s.act
-    # abar_active 为 0 时序号相邻的列配对；为 1 时活跃列相邻才配对，
-    # 4 键嵌入的谱面还会跨过拇指列。
+    # abar_active=0 pairs frame-index-adjacent columns (what v0.5.0delta's
+    # shipped code does); abar_active=1 pairs adjacent *ACTIVE* columns,
+    # which for 4K-embedded charts additionally spans the thumb column.
     if p["abar_active"] >= 0.5:
         prev_d = np.full(n, -1.0)
         prev_a = np.full(n, -1.0)
@@ -2047,8 +2555,9 @@ def compute_curves(b, s: Struct, p: dict) -> dict:
     # ================================================================== Xbar
     x_x = np.power(xrow, float(p["od_mult_x"]))
     cw = np.array([p["x_cw0"], p["x_cw1"], p["x_cw2"], p["x_cw3"]])
-    # 成对项的内切/外切方向拆分：d 大于 0 表示朝拇指列移动（内切）；
-    # 和弦参与的切换按有效列取半权。0/0 表示对称（无方向拆分）。
+    # inward/outward (内外切) direction split of the pairwise term.
+    # d > 0 = the pair moves toward the thumb column (inward/内切);
+    # chord-involved pairs contribute half.  0/0 = legacy symmetric Xbar.
     x_din = float(p.get("x_din", 0.0))
     x_dout = float(p.get("x_dout", 0.0))
     Xsum = np.zeros(n)
@@ -2059,8 +2568,10 @@ def compute_curves(b, s: Struct, p: dict) -> dict:
             fc_rows.append(np.zeros(n))
             continue
         if tau_c > 0.0:
-            # 相隔不足 tau_c 的边界事件合并成一次攻击：被拆成几毫秒多行
-            # 的和弦是一次边界事件，取整组的跨度，而不是多次钳制最大值。
+            # merge boundary events closer than tau_c into single attacks
+            # 注记：被拆成几毫秒多行的和弦
+            # is one boundary event with the group's full span, not k
+            # clamp-max events.
             pos = c["pos"]
             cid = s.chart[pos]
             bg = np.full(pos.size, np.inf)
@@ -2111,16 +2622,30 @@ def compute_curves(b, s: Struct, p: dict) -> dict:
     Rbar = _rbar(b, s, p, xrow)
 
     # 同手和弦密度：单手（拇指列除外）同行达到两个音符的行。
-    # 无条件计算（开销小）：d_sh 是合并层系数，按它门控曲线会把曲线
-    # 冻进曲线缓存里。
+    # Computed unconditionally (cheap): d_sh is a combine-level coefficient,
+    # so gating the curve on it would freeze it inside the curve cache.
     d_sh = float(p.get("d_sh", 0.0))
     mask = s.mask.astype(np.int32)
     left = _POPCOUNT7[mask & 0b0000111]
     right = _POPCOUNT7[mask & 0b1110000]
-    if tau_c > 0.0:
-        # 同手和弦的分级计数：三角窗统计同手音符数，再做连续化。
-        # （同手折扣项是逐行数值，由滑动平均做时间积分，所以不需要攻击折扣，
-        # 子区间求和本来就是同一跨度。）
+    if note_chord:
+        # CHORD-A v2 (CHORD-C R2): the same-hand chord mass is read off the
+        # PER-HAND gesture sizes, never off the total.  The v1 code used
+        # u_row * clip(u_row-1, 0, 1), which turns a pure cross-hand 2-chord
+        # (u_L = u_R = 1) into a same-hand mass of 2 and lets it collect the
+        # d_sh < 0 discount -- a measured -0.054* on a cross-hand stream.
+        #   legacy (u>=2)*u per hand  ->  u_h * clip(u_h-1, 0, 1)
+        # which also slides continuously through a 1 ms split instead of
+        # jumping by a whole note at the row seam.
+        le, ri = u_l_n, u_r_n
+        sh = (le * np.clip(le - 1.0, 0.0, 1.0)
+              + ri * np.clip(ri - 1.0, 0.0, 1.0))
+    elif tau_c > 0.0:
+        # graded same-hand chord count (discrete_audit R5): triangular
+        # +-tau_c window count of same-hand notes, then u*clip(u-1,0,1)
+        # which equals the legacy (u>=2)*u at integer u and interpolates.
+        # (SHd is a per-row VALUE, time-integrated by _wmean, so no attack
+        # discount is needed -- sub-intervals already sum to the same span.)
         le = _tri_window_count(s, left.astype(np.float64), tau_c)
         ri = _tri_window_count(s, right.astype(np.float64), tau_c)
         sh = (le * np.clip(le - 1.0, 0.0, 1.0)
@@ -2130,15 +2655,46 @@ def compute_curves(b, s: Struct, p: dict) -> dict:
               + np.where(right >= 2, right, 0.0))
     SHd = _wmean(s, sh.astype(np.float64), max(float(p.get("shd_w", 1000.0)), 50.0))
 
+    # ---- hand-aware chord fee (A4 two-hand parallelism), stream routed.
+    # Column-span pricing (Xbar) is hand-blind: a compact same-hand grip
+    # spans fewer columns than the same notes split across the two hands, so
+    # it reads CHEAPER (CHORD-C G suite: left012 4.248 < bal024 4.273 -- a
+    # one-hand three-finger grip priced below a two-hand balanced one).
+    # Routing the fee through Xbar cannot fix that at SR level: with
+    # t_jack_mix < 0 the twist numerator Xt = Xbar + t_jack_mix*Jm_b is
+    # negative exactly on jack/chord-heavy charts, so D = d_b2*S never sees
+    # Xbar there (measured on the G suite: Xbar 0->4 moves SR by 0.000).
+    # The fee therefore enters the stream branch (combine, coefficient d_hc)
+    # as a per-hand superadditive charge on the gesture sizes:
+    #     hc = (u_l - 1)_+^hc_e + (u_r - 1)_+^hc_e
+    # (u-1)_+^e is non-decreasing in u (no new superset inversion) and
+    # superadditive for e > 1, so at a fixed key count concentrating keys on
+    # ONE hand costs strictly more than splitting them ((k,0): (k-1)^e vs
+    # (i,k-i): (i-1)^e + (k-i-1)^e).  A purely cross-hand chord pays nothing.
+    # With note_chord on, u_h are the continuous gesture sizes (a 1 ms chord
+    # split keeps its window-weighted fee instead of jumping); off, they
+    # fall back to the exact per-row hand popcounts.  SHd stays as is: its
+    # u*clip(u-1,0,1) shape fails A4 at size 4 (2L2R = 4 > 3L1R = 3).
+    # Computed unconditionally (same reason as SHd: d_hc is combine-level).
+    hc_e = max(float(p.get("hc_e", 1.5)), 1.0)
+    if note_chord:
+        hc_l, hc_r = u_l_n, u_r_n
+    else:
+        hc_l = _POPCOUNT7[mask & 0b0001111].astype(np.float64)
+        hc_r = _POPCOUNT7[mask & 0b1110000].astype(np.float64)
+    hc = (np.power(np.maximum(hc_l - 1.0, 0.0), hc_e)
+          + np.power(np.maximum(hc_r - 1.0, 0.0), hc_e))
+    HCd = _wmean(s, hc, max(float(p.get("shd_w", 1000.0)), 50.0))
+
     # ================================================================== Cbar
     Cbar = _cbar(b, s, p, xrow, stats, Jbar, Ja)
     CbarV2 = _cbar_v2(b, s, p, stats)
     Cbar = Cbar + CbarV2
 
     # ============================================================ hybrid/LN
-    # 混合长键补充项。释放拥挤度与按住时长并入长键协调曲线（它们属于长键
-    # 协调现象，沿用同样的定价）；双押密度率与恢复折扣是独立曲线，
-    # 由合并阶段的流分支消费。
+    # 混合与长键机制。churn 与 holdage 并入 Cbar 曲线。
+    # coordination phenomena and inherit the a_cb/(C+a_cbc) pricing);  chord2
+    # and recov are separate curves consumed by combine's stream branch.
     Chord2 = np.zeros(n)
     Recov = np.zeros(n)
     if p.get("use_hb", 0.0):
@@ -2164,7 +2720,7 @@ def compute_curves(b, s: Struct, p: dict) -> dict:
             Recov = _hb.compute_recov(b, s, p)
 
     # ================================================================== eye
-    # E4 beat-alignment curve (眼难度).  Param-independent shape; only the
+    # E4 节拍对齐曲线。形状与参数无关，只有
     # combine coefficients are tuned.  Gated: use_eye == 0 -> exact zero.
     EyeR = np.zeros(n)
     if p.get("use_eye", 0.0):
@@ -2174,7 +2730,7 @@ def compute_curves(b, s: Struct, p: dict) -> dict:
     return dict(Jbar=Jbar, Jm=Jm, Jc=Jc, Ja=Ja, Pbar=Pbar, Xbar=Xbar,
                 Abar=Abar, Rbar=Rbar, Cbar=Cbar, CbarV2=CbarV2,
                 anchor=anchor_mult, EyeR=EyeR, Chord2=Chord2, Recov=Recov,
-                SHd=SHd)
+                SHd=SHd, HCd=HCd)
 
 
 def _cbar_v2(b, s: Struct, p: dict, stats) -> np.ndarray:
@@ -2239,7 +2795,7 @@ def _row_of_time(s: Struct, t: dict, times: np.ndarray,
 
 # --------------------------------------------------------------------- Rbar
 def _coord_weight(c1, c2, p):
-    """释放协调权重：同列 / 同手 / 拇指 / 跨手四种情形。"""
+    """delta's coordination weight: same col / same hand / thumb / cross."""
     cw = np.full(c1.shape, p["r_cw_cross"], dtype=np.float64)
     cw = np.where(c1 == c2, p["r_cw_same"], cw)
     same_hand = (HAND[c1] == HAND[c2]) & (HAND[c1] != 1)
@@ -2263,17 +2819,18 @@ def _rbar(b, s: Struct, p: dict, xrow: np.ndarray) -> np.ndarray:
                + np.exp(-p["r_I_steep"] * (I_t - p["r_I_off"])))
 
     R = np.zeros(n)
-    # 释放通道的连续化开关（默认值均为关闭状态，即精确时间戳行为）：
-    #   r_dtr_min   间隔定价的物理下限
-    #   r_soft_edges 截断处的余弦坡与亚下限间隔的时间铺底
-    #   r_sim_tau   尾/头协调指数选择的混合带
+    # 平滑开关，默认全部保持旧行为：
+    #   r_dtr_min   physical floor for the dtr^-0.5 gap pricing (B4)
+    #   r_soft_edges raised-cosine cutoff ramps + time-floored step
+    #               intervals for sub-floor gaps (B2/B3/B5)
+    #   r_sim_tau   blend zone for the tail/head coord-exponent pick (B1)
     dtr_min = p.get("r_dtr_min", 1e-4)
     soft = p.get("r_soft_edges", 0.0)
     # interval width floor (ms): a release priced at dtr_eff = max(dtr,
     # dtr_min) is spread over at least dtr_eff of time, so a simultaneous
     # (zero-width) release pair contributes the same mass as a sub-floor
     # one instead of being silently dropped -- and a 1 ms nudge no longer
-    # creates mass out of nothing.  0 表示关闭。
+    # creates mass out of nothing.  0 = legacy (max(nxt, t) == nxt).
     wfloor = dtr_min * 1000.0 if soft else 0.0
     sim_tau = p.get("r_sim_tau", 0.0)
     # ---------- A. per-tail release
@@ -2286,8 +2843,10 @@ def _rbar(b, s: Struct, p: dict, xrow: np.ndarray) -> np.ndarray:
         rv = p["r_tail"] * np.power(np.maximum(dtr, dtr_min), -0.5) / xs * (1.0 + p["r_I_w"] * I)
         same_col = (nxt_col == t["col"]) & ~nxt_is_tail
         rv = rv * np.where(same_col, p["r_same_col"], 1.0)
-        # 协调权重用正幂形式表达：跨手释放容易，但通道整体仍是难度，
-        # 不会变成负难度。
+        # v0.5.0delta uses 1 + (cw-1)*e*f_tt, which goes NEGATIVE for
+        # cross-hand releases.  We keep the ordering (cross-hand releases are
+        # easy) but express it as a positive power so the channel stays a
+        # difficulty, not an anti-difficulty.
         cw = _coord_weight(t["col"], nxt_col, p)
         if sim_tau > 0.0:
             # near-simultaneous next events: blend the tail/head coord
@@ -2318,7 +2877,7 @@ def _rbar(b, s: Struct, p: dict, xrow: np.ndarray) -> np.ndarray:
                     lock = lock + np.where(bit, _coord_weight(col, np.full(
                         col.size, j), p), 0.0)
         rv = rv * (1.0 + p["r_lock"] * lock)
-        # new: straddle (finger-independence) lock matrix
+        # 新增：跨指独立性的锁手矩阵
         if p["r_straddle"]:
             ain = np.array([p["r_ain0"], p["r_ain1"], p["r_ain2"], p["r_ain3"]])
             ag = AIN_GROUP
@@ -2469,6 +3028,46 @@ def _cbar(b, s: Struct, p: dict, xrow: np.ndarray, stats, Jbar, Ja) -> np.ndarra
 
 
 # ------------------------------------------------------------------ combine
+def _seg_iir(s: Struct, x: np.ndarray, tau: float) -> np.ndarray:
+    """Causal first-order IIR within each chart (Roxy decayState form).
+
+        F_k = F_{k-1} * exp(-dt_k/tau) + x_k,
+
+    where dt_k is the ms gap from the previous row of the SAME chart; the
+    first row of a chart restarts (F = x).  Causal (past-only, asymmetric),
+    non-negative for non-negative x, and self-saturating: a constant input
+    rate x/dt settles at ~x*tau/dt, and a low-density/gap period lets F
+    decay as exp(-dt/tau) (rest = recovery).  Evaluated per chart with the
+    exp-cumsum identity, re-based in blocks of <=500*tau so exp() never
+    overflows even for very small tau or very long charts.
+    """
+    tau = max(float(tau), 1.0)
+    out = np.empty(s.n, dtype=np.float64)
+    for c in range(s.n_charts):
+        lo, hi = int(s.starts[c]), int(s.starts[c + 1])
+        t = s.t[lo:hi]                       # ms, chart-local
+        xx = np.asarray(x[lo:hi], dtype=np.float64)
+        m = xx.size
+        if m == 0:
+            continue
+        y = np.empty(m, dtype=np.float64)
+        i0 = 0
+        carry = 0.0                          # F at row i0-1
+        prev_t = 0.0
+        while i0 < m:
+            if i0 > 0:
+                carry *= np.exp(-(t[i0] - prev_t) / tau)
+            i1 = int(np.searchsorted(t, t[i0] + 500.0 * tau, side="left"))
+            i1 = max(i1, i0 + 1)
+            eu = np.exp((t[i0:i1] - t[i0]) / tau)
+            y[i0:i1] = (carry + np.cumsum(xx[i0:i1] * eu)) / eu
+            carry = y[i1 - 1]
+            prev_t = t[i1 - 1]
+            i0 = i1
+        out[lo:hi] = y
+    return out
+
+
 def combine(s: Struct, cur: dict, p: dict) -> np.ndarray:
     A = np.maximum(cur["Abar"], 1e-6)
     Ks = s.Ks
@@ -2478,8 +3077,10 @@ def combine(s: Struct, cur: dict, p: dict) -> np.ndarray:
         return np.power(A, mult / Ks) * np.minimum(
             np.maximum(v, 0.0), p["cap_a"] + p["cap_b"] * np.maximum(v, 0.0))
 
-    # 流分支的按键数权重：7 键行用 a_p/a_r/a_cb，4 键嵌入行用 *_4k
-    # 覆盖（为 0 表示沿用共用值）。
+    # Per-frame stream weights: 7K rows use a_p/a_r/a_cb; 4K-embedded rows
+    # use the *_4k override when it is non-zero (0 = inherit, the legacy
+    # single value).  7K and 4K diverge on how dense streams / LN / release
+    # price out -- one shared coefficient is a forced compromise.
     is4k_row = s.is_4k[s.chart]
     a_p_4k = float(p.get("a_p_4k", 0.0))
     a_r_4k = float(p.get("a_r_4k", 0.0))
@@ -2505,6 +3106,7 @@ def combine(s: Struct, cur: dict, p: dict) -> np.ndarray:
         + a_r_row * np.maximum(cur["Rbar"], 0.0) / (C + p["a_c"])
         + a_cb_row * np.maximum(cur["Cbar"], 0.0) / (C + p["a_cbc"])
         + float(p.get("d_sh", 0.0)) * cur.get("SHd", 0.0)
+        + float(p.get("d_hc", 0.0)) * cur.get("HCd", 0.0)
         + eye_term)
 
     # hybrid/LN: chord2 density into stream; recovery burst discount.
@@ -2534,7 +3136,7 @@ def combine(s: Struct, cur: dict, p: dict) -> np.ndarray:
     D = (p["d_b1"] * np.power(S, p["d_ds"]) * np.power(np.maximum(T, 1e-9), p["d_dt"])
          + p["d_b2"] * S)
 
-    # ---- read (眼难度) modifier
+    # ---- 读谱修正
     if p.get("use_read", 0.0):
         compute_read, compute_read_gate = _read_compute_read, _read_compute_read_gate
         read_curve = compute_read(s.batch, s, p)
@@ -2548,6 +3150,27 @@ def combine(s: Struct, cur: dict, p: dict) -> np.ndarray:
                                p.get("read_clip_lo", 0.5),
                                p.get("read_clip_hi", 1.5))
             D = D * modifier
+
+    # ---- RT-4 stamina/fatigue branch (new non-negative additive curve).
+    # Input x = S (the combine-level local intensity: jack/stream power
+    # mean) -- the physical demand the player faces at each row.  S is
+    # upstream of this branch, so the branch never feeds back into itself
+    # and no existing curve is touched.  F accumulates sustained pressure
+    # over ~tau ms and saturates (steady state ~ S*tau/dt); gaps and
+    # low-density stretches decay it exponentially (rest = recovery).
+    # x is discounted by min(1, dt/stam_grp): a chord smeared into several
+    # rows 0-2 ms apart by timing jitter must NOT buy the impulse twice
+    # (the same anti-split idea as chord_tau_c); real successive notes sit
+    # far above stam_grp and are unaffected.  c_stam = 0 (default)
+    # disables the branch bit-for-bit.
+    c_stam = float(p.get("c_stam", 0.0))
+    if c_stam != 0.0:
+        tau = max(float(p.get("stam_tau", 8000.0)), 1.0)
+        grp = max(float(p.get("stam_grp", 30.0)), 1.0)
+        dt_prev = np.full(s.n, np.inf)
+        dt_prev[1:] = np.where(s.chart_same, s.t[1:] - s.t[:-1], np.inf)
+        x = S * np.minimum(1.0, dt_prev / grp)
+        D = D + c_stam * _seg_iir(s, x, tau)
 
     return np.maximum(np.nan_to_num(D, nan=0.0, posinf=0.0, neginf=0.0), 0.0)
 
@@ -2592,7 +3215,7 @@ def _peak_envelope(s: Struct, D: np.ndarray, ms: float) -> np.ndarray:
     """Rolling-max envelope of D over a +-ms/2 time window, per chart.
 
     The power-mean aggregate dilutes narrow difficulty peaks into the chart's
-    bulk; high peaks still matter to players.  Widening
+    而标注奖励峰值高度。展宽
     peaks into ~ms-wide plateaus restores their time share in any weighted
     mean.  The window is approximated in rows via each chart's median row
     spacing, which keeps this a C-speed per-chart maximum_filter1d.
@@ -2618,10 +3241,13 @@ def aggregate(s: Struct, D: np.ndarray, p: dict,
     """Per-chart SR from the difficulty curve D(t).
 
     agg_mode: 0 = Sunny percentiles, 1 = soft-max (exponential mean),
-              2 = sigmoid accuracy model, 3 = weighted power mean.
+              2 = sigmoid accuracy model, 3 = weighted power mean,
+              4 = two-level sectioned mass aggregate (AGG-D),
+              5 = sustained-demand capacity bisection (AGG-C).
     """
     n = s.n
-    # 峰包络：聚合会稀释窄峰，env_w = 0 表示关闭。
+    # 保留峰值的包络。加权平均会稀释窄峰，
+    # peaks; the labels reward peak height).  env_w = 0 disables.
     env_w = float(p.get("env_w", 0.0))
     if env_w != 0.0:
         E = _peak_envelope(s, D, max(float(p.get("env_ms", 800.0)), 50.0))
@@ -2632,11 +3258,33 @@ def aggregate(s: Struct, D: np.ndarray, p: dict,
     dprev[1:] = dnext[:-1]
     dprev[s.starts[:-1]] = 0.0
     gp = np.maximum(0.5 * (dnext + dprev), 0.0)
-    w = np.power(gp, float(p["agg_gap_w"])) * \
-        np.power(np.maximum(s.C, 0.0), float(p["agg_wc"]))
+    # AGG-B: aggw_gap_cap > 0 clamps the row gap that feeds the weight.  The
+    # unit is MILLISECONDS: gp is built from s.dt_diff = diff(b.tg) and b.t
+    # carries the .osu timestamps in ms (typical dense row gap 60-130 ms,
+    # max ~11 s).  Past a few hundred ms a longer gap carries no "amount of
+    # notes" information, only the absence of it, so an isolated note 30 s
+    # after a section can no longer buy itself more weight than the section.
+    # Without a cap the gp unit is irrelevant (a global scale factor cancels
+    # in the normalised power mean); with a cap it defines the clamp.
+    # 0 = off = legacy behaviour (bit-for-bit).
+    gap_cap = float(p.get("aggw_gap_cap", 0.0))
+    if gap_cap > 0.0:
+        gp = np.minimum(gp, gap_cap)
+    # AGG-B: which local "amount of notes" factor multiplies the weight:
+    #   aggw_src 0 = legacy +-500 ms note count C^agg_wc (window based)
+    #   aggw_src 1 = the row's own chord size size^agg_wc (purely local; a
+    #                rest row does not exist at all, so silence weighs 0)
+    if float(p.get("aggw_src", 0.0)):
+        amount = np.power(np.maximum(s.size.astype(np.float64), 0.0),
+                          float(p["agg_wc"]))
+    else:
+        amount = np.power(np.maximum(s.C, 0.0), float(p["agg_wc"]))
+    w = np.power(gp, float(p["agg_gap_w"])) * amount
     if hold_w and p.get("hw_a", 0.0):
         h = s.held
         w = w * (1.0 + p["hw_a"] * h / (h + max(p.get("hw_half", 1.0), 1e-6)))
+    # Single clamp every aggregation weight passes through: it also catches
+    # a negative hold factor (1 + hw_a*h/(h+hw_half) < 0 for a steep hw_a).
     w = np.maximum(np.nan_to_num(w, nan=0.0, posinf=0.0, neginf=0.0), 0.0)
     D = np.maximum(np.nan_to_num(D, nan=0.0, posinf=0.0, neginf=0.0), 0.0)
 
@@ -2658,7 +3306,14 @@ def aggregate(s: Struct, D: np.ndarray, p: dict,
         sw = np.zeros(s.n_charts)
         np.add.at(sw, s.chart, w)
         return np.power(acc / np.maximum(sw, EPS), 1.0 / pw)
-    return _sigmoid_agg(s, D, w, p)
+    if mode == 4:
+        return _aggc_two_level(s, D, gp, p, hold_w)
+    if mode == 5:
+        return _aggc_demand(s, D, gp, p, hold_w)
+    if mode == 2:
+        return _sigmoid_agg(s, D, w, p)
+    raise ValueError(f"unknown agg_mode {p['agg_mode']!r} "
+                     "(expected 0/1/2/3/4/5)")
 
 
 def _percentiles(s: Struct, D: np.ndarray, w: np.ndarray, p: dict) -> np.ndarray:
@@ -2734,6 +3389,251 @@ def _sigmoid_agg(s: Struct, D: np.ndarray, w: np.ndarray, p: dict) -> np.ndarray
     return 0.5 * (lo + hi)
 
 
+# ------------------------------------------------------------------ AGG-C/D
+def _aggc_mass(s: Struct, gp: np.ndarray, p: dict, hold_w: bool) -> np.ndarray:
+    """Row engagement mass for the AGG-C/D modes.
+
+    The defining choice of the family: wall-clock gaps are NOT mass -- a row
+    counts in proportion to how much material the player is engaged with
+    (the +-500 ms note count C), optionally modulated by the release
+    hold-aware factor.  Silence therefore carries exactly zero weight
+    instead of diluting the aggregate.
+
+    aggC_gw != 0 adds a BOUNDED gap factor min(gp, aggC_gc)**aggC_gw: the
+    gap measures how much time the player is given for the row, but past a
+    few hundred ms it carries no further engagement information -- the cap
+    is what keeps distant sparse taps from buying weight (the T1 bug).
+    The near-zero end suppresses zero-width-interval rows whose D value is
+    numerically fragile under sub-ms jitter (the T4 chaos source).
+    0 = off = pure note-count mass (bit-for-bit with the v1 form).
+    """
+    m = np.power(np.maximum(s.C, 0.0), max(float(p["aggC_wc"]), 0.0))
+    gw = float(p.get("aggC_gw", 0.0))
+    if gw != 0.0:
+        gc = max(float(p.get("aggC_gc", 400.0)), 1.0)
+        m = m * np.power(np.minimum(np.maximum(gp, 0.0), gc), gw)
+    if hold_w and p.get("aggC_hw", 0.0) and p.get("hw_a", 0.0):
+        h = s.held
+        m = m * (1.0 + p["hw_a"] * h
+                 / (h + max(p.get("hw_half", 1.0), 1e-6)))
+    return np.maximum(np.nan_to_num(m, nan=0.0, posinf=0.0, neginf=0.0), 0.0)
+
+
+def _aggc_windows(s: Struct, ms: float, gap: float,
+                  ms_4k: float = 0.0, gap_4k: float = 0.0,
+                  use_4k: bool = False):
+    """Partition rows into content sections and fixed windows.
+
+    A silence >= gap ms (or a chart start) opens a new section; windows of
+    `ms` ms are anchored at the section start, so the window grid follows
+    the content rather than the wall clock.  Windows containing no rows
+    never exist, which is what makes inserted rests drop out of the
+    aggregate.  Returns (inv, chart_win, reset, pre_gap, is4k_win):
+      inv       per-row window index (non-decreasing along the flat axis)
+      chart_win chart id of each window
+      reset     True for the first window of every section
+      pre_gap   silence (ms) before each window's first row
+      is4k_win  True where the window belongs to a 4K chart
+
+    AGG-D 精炼 (P1.5) -- per-domain geometry: key counts are constant inside
+    one chart (is_4k is a per-chart flag repeated over its rows), so a chart
+    is either entirely 4K or entirely non-4K and the geometry override can be
+    applied per chart.  With `use_4k` the row axis is partitioned by
+    s.is_4k[s.chart] and each half is windowed with its own geometry
+    (4K half: ms_4k / gap_4k, otherwise ms / gap).  `use_4k=False`, or
+    ms_4k/gap_4k at/below 0 (the "inherit" sentinel), takes the original
+    single-geometry path bit-for-bit -- behaviour rule 2: adding the
+    parameters must not move the current output by one bit.
+    """
+    n = s.n
+    first = np.zeros(n, dtype=bool)
+    first[s.starts[:-1]] = True
+    prev_gap = np.zeros(n)
+    if n > 1:
+        prev_gap[1:] = s.dt_diff[:n - 1]
+
+    def _one(seg_gap, seg_ms):
+        # NOTE seg_gap / seg_ms carry the (possibly per-domain) geometry; the
+        # outer `gap` / `ms` are the batch-global values and must NOT be used
+        # here -- the 4K group cuts and tiles on its own geometry.
+        boundary = first | (prev_gap >= seg_gap)
+        sec = np.cumsum(boundary) - 1
+        t0 = s.t[np.flatnonzero(boundary)]
+        widx = (np.floor(np.maximum(s.t - t0[sec], 0.0) / seg_ms)
+                .astype(np.int64))
+        # The key only has to GROUP equal (section, window) pairs; the window
+        # index is then derived by np.unique, so the packing never bounds the
+        # validity of the result.  (The old `sec * (widx.max()+1) + widx`
+        # overflowed int64 for a wide window over a long span, which would
+        # have silently merged distinct windows.)
+        key = sec * _AGG_WIDX + widx
+        ukey, ginv = np.unique(key, return_inverse=True)
+        ginv = ginv.astype(np.int64, copy=False)
+        # Row index of every window's first row.  The seed True makes
+        # flatnonzero include row 0, so window 0 exists exactly once -- do
+        # NOT prepend a 0 here (that would create a bogus empty window).
+        starts_w = np.flatnonzero(np.concatenate(
+            (np.ones(1, dtype=bool), ginv[1:] != ginv[:-1])))
+        return ginv, starts_w, boundary, prev_gap
+
+    if use_4k:
+        # A batch holds either both domains (single-process evaluation) or
+        # exactly one of them (the shard pools: one pool per dataset).  A
+        # uniform all-4K batch must therefore still get the 4K geometry --
+        # that is the production path -- and a batch with no 4K chart at all
+        # must behave exactly as if the override were absent.
+        is4k = s.is_4k[s.chart]
+        if is4k.all() and is4k.size:
+            inv, starts_w, reset, pre_gap = _one(
+                gap_4k if gap_4k > 0.0 else gap,
+                ms_4k if ms_4k > 0.0 else ms)
+            return (inv, s.chart[starts_w], reset, pre_gap,
+                    np.ones(starts_w.size, dtype=bool))
+        if is4k.any() and (~is4k).any():
+            ms4 = ms_4k if ms_4k > 0.0 else ms
+            gap4 = gap_4k if gap_4k > 0.0 else gap
+            inv = np.zeros(n, dtype=np.int64)
+            wch, wreset, wgap, w4 = [], [], [], []
+            base_w = 0
+            for flag in (False, True):
+                g = np.flatnonzero(is4k) if flag else np.flatnonzero(~is4k)
+                ginv, _, bnd, pgv = _one(
+                    gap4 if flag else gap, ms4 if flag else ms)
+                # Group-local window starts: `_one` numbers windows over the
+                # WHOLE batch, so its own starts may point at the other
+                # group's rows.  `g` is ascending, so one comparison on the
+                # group's own id sequence gives exactly this group's windows.
+                # `gid` is numbered over the whole batch as well, so compact
+                # it to 0..n_win_group-1 before adding the running offset --
+                # otherwise the window matrix gets holes and its length no
+                # longer matches the number of windows.
+                _, gid = np.unique(ginv[g], return_inverse=True)
+                gid = gid.reshape(-1).astype(np.int64, copy=False)
+                sw = np.flatnonzero(np.concatenate(
+                    (np.ones(1, dtype=bool), gid[1:] != gid[:-1])))
+                # Window ids are group-local (both start at 0) -> shift the
+                # second group so the two partitions stay disjoint.
+                inv[g] = gid + base_w
+                base_w += gid[-1] + 1
+                wch.append(s.chart[g[sw]])
+                wreset.append(bnd[g[sw]])
+                wgap.append(pgv[g[sw]])
+                w4.append(np.full(sw.size, flag, dtype=bool))
+            return (inv, np.concatenate(wch), np.concatenate(wreset),
+                    np.concatenate(wgap), np.concatenate(w4))
+
+    inv, starts_w, reset, pre_gap = _one(gap, ms)
+    return (inv, s.chart[starts_w], reset[starts_w], pre_gap[starts_w],
+            np.zeros(starts_w.size, dtype=bool))
+
+
+def _aggc_geom(p: dict):
+    """Resolve the AGG-D window geometry, including the per-domain 4K override.
+
+    0 (or negative) means INHERIT, not "zero-length window".
+    """
+    ms = max(float(p["aggC_ms"]), 50.0)
+    gap = max(float(p["aggC_gap"]), 50.0)
+    ms_4k = float(p.get("aggC_ms_4k", 0.0) or 0.0)
+    gap_4k = float(p.get("aggC_gap_4k", 0.0) or 0.0)
+    ms_4k = max(ms_4k, 50.0) if ms_4k > 0.0 else -1.0
+    gap_4k = max(gap_4k, 50.0) if gap_4k > 0.0 else -1.0
+    # Only a genuine override takes the split path; both sentinels (or an
+    # override numerically equal to the global value) keep the original path.
+    use_4k = (ms_4k > 0.0 and ms_4k != ms) or (gap_4k > 0.0 and gap_4k != gap)
+    return ms, gap, ms_4k, gap_4k, use_4k
+
+
+def _aggc_two_level(s: Struct, D: np.ndarray, gp: np.ndarray, p: dict,
+                    hold_w: bool) -> np.ndarray:
+    """agg_mode 4 -- two-level sectioned mass aggregate (AGG-D).
+
+    Level 1: window difficulty = mass-weighted aggC_pw1 power mean of D.
+    Level 2: chart SR = window-mass-weighted aggC_pw2 power mean over the
+    window multiset.  A mean over the window multiset is exactly invariant
+    under content repetition (x4 vs x8 tile to the same multiset) and
+    immune to appended sparse taps (their windows carry ~zero mass), while
+    the window level keeps sensitivity to local peaks that a flat mass
+    mean would dilute across the whole chart.
+
+    The window geometry may differ per domain (aggC_ms_4k / aggC_gap_4k);
+    the two levels are still computed on the union of both window sets with
+    np.add.at scatter-adds, which align with the old np.bincount calls
+    value-for-value when the override is off.
+    """
+    m = _aggc_mass(s, gp, p, hold_w)
+    pw1 = max(float(p["aggC_pw1"]), 0.05)
+    pw2 = max(float(p["aggC_pw2"]), 0.05)
+    ms, gap, ms_4k, gap_4k, use_4k = _aggc_geom(p)
+    inv, chart_win, _, _, _ = _aggc_windows(s, ms, gap, ms_4k, gap_4k, use_4k)
+    nw = chart_win.size
+    M = np.zeros(nw)
+    np.add.at(M, inv, m)
+    num1 = np.zeros(nw)
+    np.add.at(num1, inv, m * np.power(D, pw1))
+    d1 = np.power(num1 / np.maximum(M, EPS), 1.0 / pw1)
+    num = np.zeros(s.n_charts)
+    np.add.at(num, chart_win, M * np.power(d1, pw2))
+    den = np.zeros(s.n_charts)
+    np.add.at(den, chart_win, M)
+    return np.power(num / np.maximum(den, EPS), 1.0 / pw2)
+
+
+def _aggc_demand(s: Struct, D: np.ndarray, gp: np.ndarray, p: dict,
+                 hold_w: bool) -> np.ndarray:
+    """agg_mode 5 -- sustained-demand / capacity bisection (AGG-C).
+
+    The player is a capacity-limited integrator: playing a window of
+    difficulty d while at water level u adds M*(d-u) of fatigue; fatigue
+    decays exponentially across inter-window silence (time constant
+    aggC_tau) and is fully reset at section boundaries -- any silence that
+    splits a section is a breath.  SR = the lowest water level u whose
+    peak fatigue never exceeds the capacity aggC_kap, solved by bisection.
+    The time ORDER of demand is kept instead of being sorted away.
+
+    Shares the AGG-D window geometry, including the per-domain 4K override.
+    """
+    m = _aggc_mass(s, gp, p, hold_w)
+    pw1 = max(float(p["aggC_pw1"]), 0.05)
+    tau = max(float(p["aggC_tau"]), 50.0)
+    kap = max(float(p["aggC_kap"]), 1e-9)
+    ms, gap, ms_4k, gap_4k, use_4k = _aggc_geom(p)
+    inv, chart_win, reset, pre_gap, _ = _aggc_windows(
+        s, ms, gap, ms_4k, gap_4k, use_4k)
+    nw = chart_win.size
+    M = np.bincount(inv, weights=m, minlength=nw)
+    d1 = np.power(
+        np.bincount(inv, weights=m * np.power(D, pw1), minlength=nw)
+        / np.maximum(M, EPS), 1.0 / pw1)
+    # padded per-chart window matrices (padding only past each chart's end)
+    counts = np.bincount(chart_win, minlength=s.n_charts)
+    W = max(int(counts.max()) if nw else 1, 1)
+    pos = np.arange(nw) - np.repeat(np.cumsum(counts) - counts, counts)
+    MM = np.zeros((s.n_charts, W))
+    DD = np.zeros((s.n_charts, W))
+    DEC = np.zeros((s.n_charts, W))
+    valid = np.zeros((s.n_charts, W), dtype=bool)
+    MM[chart_win, pos] = M
+    DD[chart_win, pos] = d1
+    DEC[chart_win, pos] = np.where(reset, 0.0, np.exp(-pre_gap / tau))
+    valid[chart_win, pos] = True
+    lo = np.zeros(s.n_charts)
+    hi = DD.max(axis=1) + 1.0
+    for _ in range(26):
+        mid = 0.5 * (lo + hi)
+        F = np.zeros(s.n_charts)
+        peak = np.zeros(s.n_charts)
+        for j in range(W):
+            F = np.where(valid[:, j],
+                         np.maximum(0.0, F * DEC[:, j]
+                                    + MM[:, j] * (DD[:, j] - mid)), F)
+            peak = np.maximum(peak, F)
+        feas = peak <= kap
+        lo = np.where(feas, lo, mid)
+        hi = np.where(feas, mid, hi)
+    return 0.5 * (lo + hi)
+
+
 def postprocess(s: Struct, sr: np.ndarray, p: dict) -> np.ndarray:
     n_eff = s.n_notes.astype(np.float64)
     sr = sr * n_eff / (n_eff + max(p["pp_n0"], 1e-6))
@@ -2750,6 +3650,7 @@ def postprocess(s: Struct, sr: np.ndarray, p: dict) -> np.ndarray:
 
 import numpy as np
 
+# (rewritten: local)
 
 
 def _eye_compute_eye_curve(b, s, p: dict) -> np.ndarray:
@@ -2778,6 +3679,7 @@ def _eye_compute_eye_curve(b, s, p: dict) -> np.ndarray:
 
 import numpy as np
 
+# (rewritten: local)
 
 
 def _hb_compute_churn(b, s, p: dict) -> np.ndarray:
@@ -2830,8 +3732,37 @@ def _hb_compute_holdage(b, s, p: dict) -> np.ndarray:
 
 
 def _hb_compute_chord2(b, s, p: dict) -> np.ndarray:
-    """Double-note row rate (per second)."""
+    """Double-note row rate (per second).
+
+    Legacy path (note_chord == 0): the hard gate `size == 2`, i.e. exactly
+    two notes sharing one timestamp.  A +-1 ms jitter flips a row in and out
+    of that set, which is the most fragile gate in the model (CHORD-C A:
+    split 0 -> 1 ms, Chord2 0.992 -> 0).
+
+    CHORD-A v2 path (note_chord == 1): the same density read off the gesture
+    field through a triangular soft membership
+
+        mu(g) = clip(1 - |g - 2|, 0, 1) * wbar,   g = the row's gesture size
+
+    so mu == 1 exactly for a simultaneous 2-gesture (g = 2, wbar = 1), 1/2 at
+    g = 1.5 / 2.5, 0 beyond [1, 3], and a chord split across rows slides
+    continuously along that ramp instead of dropping out.
+
+    The `wbar` factor is CHORD-C R6: v1 used the neighbourhood-weighted count
+    u, which counts a lone tap sitting 20 ms from a chord as part of it and
+    then discounts the real chord to mu = 0.71.  wbar = (g-1)/(count-1) is
+    the gesture's own simultaneity coherence (1 for one row, 0 for k notes
+    spread over k rows), so mu measures the gesture rather than its
+    neighbourhood.  No new parameter.
+    """
     w = max(float(p.get("chord2_w", 1000.0)), 50.0)
+    if p.get("note_chord", 0.0) >= 0.5 and float(p.get("chord_tau_c", 0.0)) > 0.0:
+        gsz, wbar = _row_gesture_cached(b, s, p)[2:4]
+        if p.get("chord2_hard", 0.0) >= 0.5:
+            # gate on the row's own key count, like the legacy `size == 2`
+            return _wmean(s, (np.rint(gsz) == 2.0).astype(np.float64), w)
+        mu = np.clip(1.0 - np.abs(gsz - 2.0), 0.0, 1.0) * np.clip(wbar, 0.0, 1.0)
+        return _wmean(s, mu, w)
     return _wmean(s, (s.size == 2).astype(np.float64), w)
 
 
@@ -2850,6 +3781,7 @@ def _hb_compute_recov(b, s, p: dict) -> np.ndarray:
 
 import numpy as np
 
+# (rewritten: local)
 _DEFAULTS_REF = _PARAM_DEFAULTS
 
 # column-pair groups of the 7x7 cross-column matrices (mirror-symmetric by
@@ -3090,8 +4022,10 @@ class _lncoord_v2_CbarV2:
         ja_norm = max(self._f("ja_norm"), 1e-3)
         ja_len_exp = self._f("ja_len_exp")
         ja_coord_exp = self._f("ja_coord_exp")
-        # cbv_lock_pow：逐列锁质量的指数。1.0 表示线性；小于 1 时重锁
-        # 状态饱和。
+        # cbv_lock_pow: exponent on the per-column lock mass.  1.0 = linear
+        # (legacy).  <1 makes heavy locking saturate -- the high-end 7K LN
+        # charts (lockanchor z>+12 vs peers) suggest the linear form
+        # over-prices extreme lock states.
         lock_pow = self._f("cbv_lock_pow")
         num = np.zeros(n)
         den = np.zeros(n)
@@ -3264,6 +4198,7 @@ def _lncoord_v2_compute_cbar_v2(b, s, p, stats=None) -> np.ndarray:
 
 import numpy as np
 
+# (rewritten: local)
 
 
 def _read_compute_read_curve(b, s, p: dict) -> np.ndarray:
@@ -3329,14 +4264,6 @@ def _read_compute_read(b, s, p: dict) -> np.ndarray:
 
 
 _HB_MOD = type('m', (), {'compute_churn': _hb_compute_churn, 'compute_holdage': _hb_compute_holdage, 'compute_chord2': _hb_compute_chord2, 'compute_recov': _hb_compute_recov})
-
-_eye_compute_eye_curve = _eye_compute_eye_curve
-
-_lncoord_v2_compute_cbar_v2 = _lncoord_v2_compute_cbar_v2
-
-_read_compute_read, _read_compute_read_gate = _read_compute_read_curve, _read_compute_read_gate
-
-_read_compute_read = _read_compute_read
 
 _BATCH_MOD_REF = type('m', (), {'cached_parse': cached_parse})
 

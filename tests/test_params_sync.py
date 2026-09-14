@@ -23,7 +23,7 @@ for _p in (_ROOT,):
         sys.path.insert(0, _p)
 
 _ENGINE = os.path.join(_ROOT, "interface", "python", "spm_engine.py")
-_PARAMS_FILE = os.path.join(_ROOT, "params", "spm-rating-1.0.0.json")
+_PARAMS_FILE = os.path.join(_ROOT, "params", "spm-rating-1.1.0.json")
 
 
 def _engine_params() -> dict:
@@ -62,8 +62,8 @@ def test_param_values_match_exactly() -> None:
 
 def test_param_counts_match() -> None:
     engine, release = _engine_params(), _file_params()
-    assert len(engine) == len(release) == 248, (
-        f"expected 248 parameters, got engine={len(engine)} file={len(release)}"
+    assert len(engine) == len(release) == 272, (
+        f"expected 272 parameters, got engine={len(engine)} file={len(release)}"
     )
 
 
