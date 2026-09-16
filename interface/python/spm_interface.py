@@ -1,35 +1,35 @@
-"""SPM Rating v1.1.0 —— SPM 标准化接口实现（interface_spec_version 1.0）。
-
+"""SPM Rating v1.1.1 —— SPM 标准化接口实现（interface_spec_version 1.0）。
+ 
 自包含模块：除 numpy、scipy 外零第三方依赖。将本目录（interface/python/）
 复制到任意空目录后可直接运行。
-
-  from spm_interface import analyze, capabilities
-  result = analyze(source, input_type="auto", speed_rate=1.0, mode="full")
-
+ 
+   from spm_interface import analyze, capabilities
+   result = analyze(source, input_type="auto", speed_rate=1.0, mode="full")
+ 
 参数说明：
 - source：.osu 文件路径字符串（input_type="path"）或完整文件文本内容
-  （input_type="content"）；input_type="auto" 时按规则自动判别
-  （含有 "osu file format" 则视为文本内容）。
+   （input_type="content"）；input_type="auto" 时按规则自动判别
+   （含有 "osu file format" 则视为文本内容）。
 - speed_rate：速度倍率。本实现仅支持 1.0，传入其他值时仍按 1.0 计算，
-  并在 full 模式的 extras 中标记 speed_rate_ignored=true。
+   并在 full 模式的 extras 中标记 speed_rate_ignored=true。
 - mode="minimal"：返回 {"schema_version", "star"}。
 - mode="full"：返回完整 Schema。star_rc、star_ln 哨兵值为 -255，
-  sort 哨兵值为空字符串，tags、curves 哨兵值为 null，performance
-  含 compute_time_ms。
+   sort 哨兵值为空字符串，tags、curves 哨兵值为 null，performance
+   含 compute_time_ms。
 - 计算失败返回 {"schema_version": "1.0", "star": -255, "error": ...}。
 """
-
+ 
 import os
 import tempfile
 import time
-
+ 
 from rating_engine import rate_file as _rate_file
-
+ 
 _SCHEMA_VERSION = "1.0"
 _ALGORITHM = {
     "id": "spm-rating",
     "name": "SPM Rating",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "variant": "main",
 }
 _CAPABILITIES = {

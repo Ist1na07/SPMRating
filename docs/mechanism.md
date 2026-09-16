@@ -1,9 +1,9 @@
-# SPM Rating v1.1.0 Algorithm Mechanism Specification (Full Reproducibility Standard)
+# SPM Rating v1.1.1 Algorithm Mechanism Specification (Full Reproducibility Standard)
 
-> This document serves as the **exhaustive specification** for SPM Rating v1.1.0. Any developer or researcher can completely reproduce the algorithm from scratch with exact numerical parity (ulp-level consistency) across any programming language solely by following the equations and procedures detailed herein.
+> This document serves as the **exhaustive specification** for SPM Rating v1.1.1. Any developer or researcher can completely reproduce the algorithm from scratch with exact numerical parity (ulp-level consistency) across any programming language solely by following the equations and procedures detailed herein.
 >
-> Single-source-of-truth parameter file: [params/spm-rating-1.1.0.json](../params/spm-rating-1.1.0.json) (272 independent parameters).
-> Accompanying technical reports: [History & Findings](history.md) (evolution and ablation studies from v0.5.0/v1.0.0 to v1.1.0), [Maintenance Guide](maintenance.md) (engineering benchmarks and CI gates).
+> Single-source-of-truth parameter file: [params/spm-rating-1.1.1.json](../params/spm-rating-1.1.1.json) (276 independent parameters).
+> Accompanying technical reports: [History & Findings](history.md) (evolution and ablation studies from v0.5.0/v1.0.0 to v1.1.0/v1.1.1), [Maintenance Guide](maintenance.md) (engineering benchmarks and CI gates).
 
 ---
 
@@ -369,7 +369,7 @@ $$
 \mathrm{branch}(v, \mathrm{mult}) = A^{\mathrm{mult} / K_s} \cdot \min\big(\max(v, 0),\; \mathrm{cap}_a + \mathrm{cap}_b \cdot \max(v, 0)\big)
 $$
 
-where saturation cutoff parameters are $\mathrm{cap}_a = 10.8467, \; \mathrm{cap}_b = 0.7670$. Saturated branches are computed with exponent parameter $a_j = 3.9808$:
+where saturation cutoff parameters are $\mathrm{cap}_a = 10.8467, \; \mathrm{cap}_b = 0.7670$. Saturated branches are computed with exponent parameter $a_j = 3.4083$:
 
 ### 9.2 Stream Branch
 
@@ -381,13 +381,13 @@ $$
 4K overrides: $a_{p, 4\mathrm{K}} = 0.9672, \; a_{r, 4\mathrm{K}} = 0.0, \; a_{cb, 4\mathrm{K}} = 11.357$.
 
 ### 9.3 Generalized Power Sum $S$
-Using generalized power sum exponent $s_p = 1.1441$ (parameter `s_p`):
+Using generalized power sum exponent $s_p = 1.1397$ (parameter `s_p`):
 
 $$
 S = \left( c_{\mathrm{jm}} \cdot J_{m, \mathrm{sat}}^{s_p} + c_{\mathrm{jc}} \cdot J_{c, \mathrm{sat}}^{s_p} + c_{\mathrm{ja}} \cdot J_{a, \mathrm{sat}}^{s_p} + c_s \cdot \mathrm{stream}^{s_p} \right)^{1 / s_p}
 $$
 
-Weights: $c_{\mathrm{jm}} = 0.4888, c_{\mathrm{jc}} = 0.06036, c_{\mathrm{ja}} = -0.00125, c_s = 0.4116$.
+Weights: $c_{\mathrm{jm}} = 0.5453, c_{\mathrm{jc}} = 0.01839, c_{\mathrm{ja}} = -0.00125, c_s = 0.3931$.
 
 ### 9.4 Twist Factor $T$ and Total Instantaneous $D$
 
@@ -467,12 +467,12 @@ $$
 3. **Linear Affine Calibration**:
 
 $$
-\mathrm{SR} = \max\big(0.0,\; \mathrm{SR}_2 \cdot 0.97524 \cdot 0.98747 + 0.77542\big)
+\mathrm{SR} = \max\big(0.0,\; \mathrm{SR}_2 \cdot 0.98662 \cdot 0.98771 + 0.68240\big)
 $$
 
    where parameters are `pp_scale = 0.97524`, `calib_a = 0.98747`, `calib_b = 0.77542`.
 
-Output scalar $\mathrm{SR}$ is the final SPM Rating v1.1.0 Star Rating.
+Output scalar $\mathrm{SR}$ is the final SPM Rating v1.1.1 Star Rating.
 
 ---
 
@@ -492,17 +492,18 @@ Output scalar $\mathrm{SR}$ is the final SPM Rating v1.1.0 Star Rating.
 
 ## Appendix B: Full Release Parameter Manifest (272 Items)
 
-All parameters conform to `params/spm-rating-1.1.0.json`, certified by unit tests:
+All parameters conform to `params/spm-rating-1.1.1.json`, certified by unit tests:
 
 ```json
 {
-  "a_c": 10.717498918905136,
-  "a_cb": 4.0,
-  "a_cb_4k": 11.357365798773392,
-  "a_cbc": 10.310670820602846,
+{
+  "a_c": 13.380682264603966,
+  "a_cb": 3.290737504274206,
+  "a_cb_4k": 10.329032565184669,
+  "a_cbc": 4.546298626916172,
   "a_p": 0.457050886903945,
-  "a_p_4k": 0.9671708233722217,
-  "a_r": 59.95490931764664,
+  "a_p_4k": 1.0271932840768654,
+  "a_r": 71.93325028558291,
   "a_r_4k": 0.0,
   "abar_active": 0.02531712913365081,
   "abar_c0": 0.729854838334696,
@@ -515,18 +516,18 @@ All parameters conform to `params/spm-rating-1.1.0.json`, certified by unit test
   "abar_thr_hi": 0.09447563280275387,
   "abar_thr_lo": 0.01682395583948343,
   "abar_weld": 1.0,
-  "aggC_gap": 1854.5025717967414,
+  "aggC_gap": 1919.100392694976,
   "aggC_gap_4k": 0.0,
-  "aggC_gc": 175.54925904730135,
-  "aggC_gw": 0.9662521390192742,
+  "aggC_gc": 206.24663914625867,
+  "aggC_gw": 1.0018741768102066,
   "aggC_hw": 1.0,
-  "aggC_kap": 0.8158674595893058,
-  "aggC_ms": 6902.951638984199,
+  "aggC_kap": 0.8250936661252044,
+  "aggC_ms": 6903.358465661703,
   "aggC_ms_4k": 0.0,
-  "aggC_pw1": 2.136557656138545,
-  "aggC_pw2": 5.387422077432465,
-  "aggC_tau": 4000.565712785322,
-  "aggC_wc": 1.1549846294570107,
+  "aggC_pw1": 2.1462221289544194,
+  "aggC_pw2": 5.549120840435838,
+  "aggC_tau": 4027.709861084976,
+  "aggC_wc": 1.1528146438243094,
   "agg_C": 5.7765188650680015,
   "agg_gamma": 0.3142734186203886,
   "agg_gap_w": 1.0873927743990874,
@@ -536,22 +537,23 @@ All parameters conform to `params/spm-rating-1.1.0.json`, certified by unit test
   "agg_wc": 1.145022164188944,
   "aggw_gap_cap": 0.0,
   "aggw_src": 0.0,
-  "aj": 3.9808431543594054,
+  "aj": 3.4082562260373974,
   "an_a0": 0.17043768459177114,
   "an_a1": 0.34850214310770977,
   "an_cubic": 6.806495193662656,
   "an_on_p": -0.3268168035336469,
-  "ap": 0.5424624766238797,
+  "ap": 1.039645612096299,
   "at": 5.704296617075204,
   "c_chord2": 0.0,
   "c_fj": 1.1223698076832407,
   "c_fj_4k": 1.6384853006440867,
   "c_ja": -0.001250731346377573,
-  "c_jc": 0.06036006771704075,
-  "c_jm": 0.48876747736872084,
-  "c_s": 0.41160107609882524,
-  "calib_a": 0.9874699211242837,
-  "calib_b": 0.7754219268783653,
+  "c_jc": 0.018393884652087668,
+  "c_jm": 0.5452603821867452,
+  "c_s": 0.3931375724076219,
+  "c_stam": 0.0,
+  "calib_a": 0.9877134644832144,
+  "calib_b": 0.6823998306913243,
   "cap_a": 10.84672199638674,
   "cap_b": 0.7669642744433789,
   "cb_holdtap": 0.0,
@@ -629,6 +631,7 @@ All parameters conform to `params/spm-rating-1.1.0.json`, certified by unit test
   "eye_tau": 0.2,
   "eye_w_ref": 4000.0,
   "eye_w_s": 500.0,
+  "fj_bounded": 0.0,
   "ga_alpha": 0.0,
   "ga_gam": 1.0,
   "ga_pw": 1.0,
@@ -664,8 +667,8 @@ All parameters conform to `params/spm-rating-1.1.0.json`, certified by unit test
   "od_mult_p": 1.1264849156945338,
   "od_mult_r": 1.064323992348447,
   "od_mult_x": 1.1651306736110387,
-  "out_a": 0.7126068194786057,
-  "out_b": -0.9041441776349508,
+  "out_a": 0.8686939253627315,
+  "out_b": -0.9591165705858606,
   "p83_c": 2.667686959362696,
   "p93_c": 2.505172683584436,
   "p_boost": -1e-05,
@@ -686,10 +689,10 @@ All parameters conform to `params/spm-rating-1.1.0.json`, certified by unit test
   "p_sat_b": 2.0349325289971496,
   "p_scale": 0.05862260059258437,
   "p_v_norm": -0.005007331887365899,
-  "pp_div": 1.5280913205440017,
-  "pp_n0": 2.882604709275971,
-  "pp_scale": 0.9752438292174499,
-  "pp_thr": 8.309978532525944,
+  "pp_div": 1.559992046815954,
+  "pp_n0": 0.0,
+  "pp_scale": 0.9866220368284715,
+  "pp_thr": 8.416405509249257,
   "r_I_off": 1.679847001293981,
   "r_I_steep": 3.8155719025104933,
   "r_I_w": 1.0611113361746765,
@@ -724,8 +727,10 @@ All parameters conform to `params/spm-rating-1.1.0.json`, certified by unit test
   "rec_half": 0.4886690846205094,
   "recov_w": 989.9492044110127,
   "recov_wl": 21003.231873446508,
-  "s_p": 1.1440878056059884,
+  "s_p": 1.1396559261442123,
   "shd_w": 1071.1117107781824,
+  "stam_grp": 30.0,
+  "stam_tau": 8000.0,
   "t_jack_mix": -0.35552500051452174,
   "t_s_off": 0.4819735114526039,
   "use_cbar_v2": 1.0,

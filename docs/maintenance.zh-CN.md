@@ -1,4 +1,4 @@
-# SPM Rating v1.1.0 维护与升级手册
+# SPM Rating v1.1.1 维护与升级手册
 
 > 本手册面向使用、维护与升级 SPM Rating 算法的工程师。
 > 涵盖环境搭建、日常评分接口调用、合规回归检查、发版打包流水线，以及必须严格遵守的工程避坑铁律。
@@ -80,7 +80,7 @@ python tests/compliance_check.py
 python -m pytest tests/ -q
 ```
 - 验证 `test_lncoord_v2.py` 长键协调跨列代价计算正确性；
-- 验证 `test_params_sync.py`：**核心安全守卫**，确保 `interface/python/spm_engine.py` 内部固化的参数与 `params/spm-rating-1.1.0.json` 发布的 272 个参数键名、数值及备注文本**绝对一致 (Bit-for-Bit)**。
+- 验证 `test_params_sync.py`：**核心安全守卫**，确保 `interface/python/spm_engine.py` 内部固化的参数与 `params/spm-rating-1.1.1.json` 发布的 276 个参数键名、数值及备注文本**绝对一致 (Bit-for-Bit)**。
 
 ---
 

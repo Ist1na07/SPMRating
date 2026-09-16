@@ -1,4 +1,4 @@
-# SPM Rating v1.1.0 Maintenance and Operation Guide
+# SPM Rating v1.1.1 Maintenance and Operation Guide
 
 > This manual is intended for engineers using, maintaining, and developing SPM Rating.
 > It covers environment setup, rating APIs, regression compliance checks, release packaging pipelines, and critical development guardrails.
@@ -80,7 +80,7 @@ Performs 5 automated safety checks:
 python -m pytest tests/ -q
 ```
 - Validates `test_lncoord_v2.py` coordination cost mechanics;
-- Runs `test_params_sync.py`: **Critical guard**, asserting that the 272 parameters and documentation notes embedded inside `interface/python/spm_engine.py` match `params/spm-rating-1.1.0.json` bit-for-bit.
+- Runs `test_params_sync.py`: **Critical guard**, asserting that the 276 parameters and documentation notes embedded inside `interface/python/spm_engine.py` match `params/spm-rating-1.1.1.json` bit-for-bit.
 
 ---
 
