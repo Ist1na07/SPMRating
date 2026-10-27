@@ -1,4 +1,0 @@
-# Development / test dependencies.  Running the engine itself only needs
-# requirements.txt; install this file to run the test suite and CI.
--r requirements.txt
-pytest>=7

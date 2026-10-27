@@ -1,16 +1,16 @@
 Third-party material
 ====================
 
-Charts (tests/cases/)
----------------------
-The .osu files under tests/cases/ are NOT distributed under the MIT license of
-this repository. They come from public benchmark sets and are redistributed
-for regression testing only; all rights remain with the original mappers.
-
 Base architecture acknowledgment
 --------------------------------
 The rating model is built on the sunny-rework architecture by sunnyxxy
-(https://github.com/sunnyxxy/Star-Rating-Rebirth). That repository carries no
-open-source license as of the 1.0.0 release date. The recomputation here was
-independent (own parser, own vectorised implementation), and this
-acknowledgment does not assert any license grant from the upstream author.
+(https://github.com/sunnyxxy/Star-Rating-Rebirth). SPM Rating supplies its own
+parser and numerical implementation of the model.
+
+Example charts and audio
+------------------------
+The P/Q charts and click tracks in examples/ were generated for this project.
+
+Trademarks
+----------
+osu! is a trademark of ppy. SPM Rating is an independent project.
