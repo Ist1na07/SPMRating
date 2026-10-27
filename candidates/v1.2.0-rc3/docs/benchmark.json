@@ -1,0 +1,216 @@
+{
+  "version": "1.2.0-rc3",
+  "date": "2026-10-27",
+  "metric": "Spearman rank correlation, average ranks for ties",
+  "weighted_summary": {
+    "weights": {
+      "7k": 0.5,
+      "4k": 0.2777777777777778,
+      "apolar": 0.2222222222222222
+    },
+    "separate_domains": [
+      "ln",
+      "6k"
+    ]
+  },
+  "sample_counts": {
+    "7k": 393,
+    "4k": 741,
+    "apolar": 292,
+    "ln": 40,
+    "6k": 2343
+  },
+  "local_panel": {
+    "charts": 12,
+    "long_note_charts": 9,
+    "contained_in": "7k"
+  },
+  "label_error_rule": "Count inversions when the label gap exceeds the sum of both annotator-provided maximum-error estimates.",
+  "models": {
+    "detail": {
+      "weighted_rho": 0.9883340347422086,
+      "metrics": {
+        "7k": {
+          "rho": 0.9889756174756696,
+          "nominal_pairs": 74845,
+          "nominal_inversions": 2491,
+          "prediction_ties": 1,
+          "half_pairs": 67660,
+          "half_inversions": 669,
+          "half_ties": 0,
+          "full_pairs": 58614,
+          "full_inversions": 103,
+          "full_ties": 0,
+          "certain_gap_regret": 11.858100000000015
+        },
+        "4k": {
+          "rho": 0.9883302537449173,
+          "nominal_pairs": 266838,
+          "nominal_inversions": 9070,
+          "prediction_ties": 0
+        },
+        "apolar": {
+          "rho": 0.9868951998385354,
+          "nominal_pairs": 41125,
+          "nominal_inversions": 1370,
+          "prediction_ties": 0
+        },
+        "ln": {
+          "rho": 0.9046625902644014,
+          "nominal_pairs": 724,
+          "nominal_inversions": 72,
+          "prediction_ties": 0,
+          "half_pairs": 553,
+          "half_inversions": 25,
+          "half_ties": 0,
+          "full_pairs": 320,
+          "full_inversions": 0,
+          "full_ties": 0,
+          "certain_gap_regret": 0.0
+        },
+        "6k": {
+          "rho": 0.9572221820545248,
+          "nominal_pairs": 2548592,
+          "nominal_inversions": 142296,
+          "prediction_ties": 11
+        }
+      },
+      "local": {
+        "rho": 0.8662186627009183,
+        "nominal_pairs": 62,
+        "nominal_inversions": 7,
+        "prediction_ties": 0,
+        "half_pairs": 34,
+        "half_inversions": 0,
+        "half_ties": 0,
+        "full_pairs": 21,
+        "full_inversions": 0,
+        "full_ties": 0,
+        "certain_gap_regret": 0.0
+      },
+      "role_price": 0.10220147228915628,
+      "role_price_minimum_during_calibration": 0.1
+    },
+    "compact": {
+      "weighted_rho": 0.9882713687939214,
+      "metrics": {
+        "7k": {
+          "rho": 0.9887586231295867,
+          "nominal_pairs": 74845,
+          "nominal_inversions": 2534,
+          "prediction_ties": 1,
+          "half_pairs": 67660,
+          "half_inversions": 692,
+          "half_ties": 0,
+          "full_pairs": 58614,
+          "full_inversions": 99,
+          "full_ties": 0,
+          "certain_gap_regret": 11.557950000000012
+        },
+        "4k": {
+          "rho": 0.9884516309975019,
+          "nominal_pairs": 266838,
+          "nominal_inversions": 8984,
+          "prediction_ties": 0
+        },
+        "apolar": {
+          "rho": 0.9869497187841987,
+          "nominal_pairs": 41125,
+          "nominal_inversions": 1375,
+          "prediction_ties": 0
+        },
+        "ln": {
+          "rho": 0.8991009467481359,
+          "nominal_pairs": 724,
+          "nominal_inversions": 75,
+          "prediction_ties": 0,
+          "half_pairs": 553,
+          "half_inversions": 26,
+          "half_ties": 0,
+          "full_pairs": 320,
+          "full_inversions": 0,
+          "full_ties": 0,
+          "certain_gap_regret": 0.0
+        },
+        "6k": {
+          "rho": 0.9566593879942353,
+          "nominal_pairs": 2548592,
+          "nominal_inversions": 143107,
+          "prediction_ties": 11
+        }
+      },
+      "local": {
+        "rho": 0.8662186627009183,
+        "nominal_pairs": 62,
+        "nominal_inversions": 7,
+        "prediction_ties": 0,
+        "half_pairs": 34,
+        "half_inversions": 0,
+        "half_ties": 0,
+        "full_pairs": 21,
+        "full_inversions": 0,
+        "full_ties": 0,
+        "certain_gap_regret": 0.0
+      },
+      "role_price": 0.11428371518823142,
+      "role_price_minimum_during_calibration": 0.1
+    }
+  },
+  "v111_reference": {
+    "weighted_rho": 0.9813464478244167,
+    "metrics": {
+      "7k": {
+        "rho": 0.9790412050205861,
+        "nominal_pairs": 74845,
+        "nominal_inversions": 3616,
+        "prediction_ties": 0,
+        "half_pairs": 67660,
+        "half_inversions": 1393,
+        "half_ties": 0,
+        "full_pairs": 58614,
+        "full_inversions": 293,
+        "full_ties": 0,
+        "certain_gap_regret": 50.19465000000006
+      },
+      "4k": {
+        "rho": 0.9857262138452384,
+        "nominal_pairs": 266838,
+        "nominal_inversions": 10230,
+        "prediction_ties": 0
+      },
+      "apolar": {
+        "rho": 0.9810585366070086,
+        "nominal_pairs": 41125,
+        "nominal_inversions": 1626,
+        "prediction_ties": 0
+      },
+      "ln": {
+        "rho": 0.8830758722097439,
+        "nominal_pairs": 724,
+        "nominal_inversions": 90,
+        "prediction_ties": 0,
+        "half_pairs": 553,
+        "half_inversions": 24,
+        "half_ties": 0,
+        "full_pairs": 320,
+        "full_inversions": 2,
+        "full_ties": 0,
+        "certain_gap_regret": 0.14790000000000192
+      }
+    },
+    "local": {
+      "rho": 0.514097255098919,
+      "nominal_pairs": 62,
+      "nominal_inversions": 18,
+      "prediction_ties": 0,
+      "half_pairs": 34,
+      "half_inversions": 5,
+      "half_ties": 0,
+      "full_pairs": 21,
+      "full_inversions": 0,
+      "full_ties": 0,
+      "certain_gap_regret": 0.0
+    }
+  },
+  "scope": "Development collections reused during design and calibration; v1.1.1 evaluated with the common comparison pipeline."
+}

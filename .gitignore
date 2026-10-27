@@ -9,3 +9,9 @@ preds/
 _scratch/
 .DS_Store
 tests/compliance_report.json
+*.nbi
+*.nbc
+.venv/
+*.npz
+*.npy
+candidates/**/scores.csv
