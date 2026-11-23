@@ -101,7 +101,7 @@ v1.3.0 保持时间与区间契约兼容，但原始分及参考分数值不与 
 | `spm_rating/clock.py` | 原谱小数时刻连续相位延拓 |
 | `spm_rating/models/` | 打包模型权重与域参考映射（`detail`、`compact`、`detail-4k`） |
 
-运行 `pytest tests -q -p no:cacheprovider`（或 `python -m unittest discover -s tests -v`）执行测试套件。更多技术说明见[模型原理](docs/model.zh-CN.md)、[评估与模型取舍](docs/evaluation.zh-CN.md)、[4K 参考标定说明](docs/calibration-4k.zh-CN.md)及[时间处理](docs/time.zh-CN.md)（均备有英文版）。
+运行 `pytest tests -q -p no:cacheprovider`（或 `python -m unittest discover -s tests -v`）执行测试套件。更多技术说明见[完整算法机制](docs/mechanism.zh-CN.md)、[模型概览](docs/model.zh-CN.md)、[评估与模型取舍](docs/evaluation.zh-CN.md)、[4K 参考标定说明](docs/calibration-4k.zh-CN.md)、[时间处理](docs/time.zh-CN.md)与[更新日志](CHANGELOG.zh-CN.md)（均备有英文版）。
 
 ## 历史版本与许可
 

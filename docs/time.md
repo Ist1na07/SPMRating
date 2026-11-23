@@ -1,6 +1,6 @@
 # Fractional chart times
 
-[简体中文](time.zh-CN.md) · [Model](model.md)
+[简体中文](time.zh-CN.md) · [Model](model.md) · [Full Mechanism](mechanism.md)
 
 ## Shared-phase extension
 
@@ -28,7 +28,7 @@ With object identities and judgment metadata fixed, moving one time by `delta` m
 
 This reasoning applies where neighboring rounded charts remain supported. Changes in object membership, conflicting same-key objects, and judgment metadata require their own treatment. A small finite displacement such as 1 ms may still have a noticeable score effect.
 
-In a 15-chart development check, column-dependent shifts of one millionth of a millisecond gave maximum relative score changes of about 1.84e-8 and 1.87e-8 for the two models. At 1 ms, the maxima were about 1.84% and 1.87%.
+In a 15-chart 7K development check, column-dependent shifts of one millionth of a millisecond gave maximum relative score changes of about `8.37e-8` (`detail`) and `1.01e-7` (`compact`). At `1 ms`, the maxima were about `8.37%` and `10.10%`.
 
 ## Segments and curves
 

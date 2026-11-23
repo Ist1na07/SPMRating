@@ -1,6 +1,6 @@
 # 模型工作原理
 
-[English](model.md) · [使用说明](../README.zh-CN.md) · [评估与取舍](evaluation.zh-CN.md)
+[English](model.md) · [完整机制](mechanism.zh-CN.md) · [使用说明](../README.zh-CN.md) · [评估与取舍](evaluation.zh-CN.md)
 
 ## 从谱面对象到评分
 

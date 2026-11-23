@@ -1,6 +1,6 @@
 # Evaluation and model tradeoffs
 
-[简体中文](evaluation.zh-CN.md) · [Usage](../README.md) · [Model](model.md)
+[简体中文](evaluation.zh-CN.md) · [Usage](../README.md) · [Model](model.md) · [Full Mechanism](mechanism.md)
 
 ## Evaluation datasets and protocol
 
@@ -89,4 +89,4 @@ The composite development score balances $0.5\,\rho_{7K} + (5/18)\,\rho_{4K} + (
 
 Compared with RC3 (which relied on 206 active continuous coordinates, multiple negative compensating channel weights, and subtractive recovery terms that triggered 120 synthetic stress violations and `85.902` max OOD leverage-to-curvature danger), v1.3.0 trades slightly lower middle-band ordering on the 393-chart 7K panel (`0.9849` vs. `0.9888`, primarily in `5–9` mid-range charts where v1.3.0 simultaneously improves extreme `<5` band ordering `0.664 → 0.761` and reduces `9–11` MAE `0.277 → 0.176`), `4K holdout stamina` ordering, and `BMS Stella` in exchange for **zero synthetic violations**, **~6× lower OOD instability**, **+0.064 BMS weighted ρ**, **+0.166 7K 2 s local replay ρ**, **−58% 4K Dan MAE**, and **exact `0.0` aggregation-origin invariance**.
 
-The compact historical RC3 development tables remain preserved in [benchmark.json](benchmark.json).
+Structured v1.3.0 metrics together with the historical RC3 development reference tables are stored in [benchmark.json](benchmark.json).

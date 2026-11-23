@@ -1,0 +1,7 @@
+*.json text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.osu text eol=lf
+*.cmd text eol=crlf
+*.wav binary

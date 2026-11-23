@@ -1,6 +1,6 @@
 # How the model works
 
-[简体中文](model.zh-CN.md) · [Usage](../README.md) · [Evaluation](evaluation.md)
+[简体中文](model.zh-CN.md) · [Full Mechanism](mechanism.md) · [Usage](../README.md) · [Evaluation](evaluation.md)
 
 ## From objects to a score
 

@@ -67,10 +67,16 @@ def load_model(name, *, model_dir=None):
     if name not in MODEL_NAMES:
         raise ValueError("Unknown model name.")
     root=Path(model_dir) if model_dir is not None else Path(__file__).resolve().parent/"models"
+    return _load_model(name,root)[0]
+
+
+def _load_model(name,root):
     path=root/(name+".json")
     if not path.is_file():
         raise ValueError("Model file is missing.")
     raw=path.read_bytes()
+    # A Git checkout may change line endings without changing the model.
+    raw_norm=raw.replace(b"\r\n",b"\n")
     data=json.loads(raw)
     if not data.get("completed_validation",False):
         raise ValueError("Model validation is unfinished.")
@@ -82,13 +88,18 @@ def load_model(name, *, model_dir=None):
         raise ValueError("Unknown scoring engine.")
     alignment={k:_checked_alignment(v) for k,v in data.get("alignment",{}).items()}
     if name=="detail-4k":
-        base=load_model("detail",model_dir=root)
-        if data["base_model_identity"]!=base.identity or kind!=base.engine or revision!=base.revision:
+        base,base_norm=_load_model("detail",root)
+        base_id=data["base_model_identity"]
+        matches=base_id==base.identity
+        if not matches and revision==1:
+            # Historical overlays could record the exact same base with CRLF.
+            matches=base_id==hashlib.sha256(base_norm.replace(b"\n",b"\r\n")).hexdigest()
+        if not matches or kind!=base.engine or revision!=base.revision:
             raise ValueError("4K alignment requires the validated detail model.")
         if set(alignment)!={"4"}:
             raise ValueError("Expected a 4K-only alignment.")
-        identity=hashlib.sha256(bytes.fromhex(base.identity)+raw).hexdigest()
-        return replace(base,name=name,alignment=MappingProxyType({**base.alignment,**alignment}),identity=identity)
+        identity=hashlib.sha256(bytes.fromhex(base.identity)+raw_norm).hexdigest()
+        return replace(base,name=name,alignment=MappingProxyType({**base.alignment,**alignment}),identity=identity),raw_norm
     p=MappingProxyType(data["parameters"])
     fixed=MappingProxyType(data.get("fixed_parameters",{}))
     if kind=="v130":
@@ -103,8 +114,8 @@ def load_model(name, *, model_dir=None):
         if set(alignment)!={"4","6","7"}:
             raise ValueError("v1.3.0 requires validated 4K, 6K and 7K reference maps.")
     return Model(name,p,float(data.get("role_price",p.get("role_price",fixed.get("role_price",0.)))),
-                 MappingProxyType(alignment),hashlib.sha256(raw).hexdigest(),bool(data.get("physical_objects",True)),
-                 kind,data.get("candidate"),bool(data.get("compact",False)),bool(data.get("motion",False)),fixed,revision,MappingProxyType(data.get("arm_flags",{})))
+                 MappingProxyType(alignment),hashlib.sha256(raw_norm).hexdigest(),bool(data.get("physical_objects",True)),
+                 kind,data.get("candidate"),bool(data.get("compact",False)),bool(data.get("motion",False)),fixed,revision,MappingProxyType(data.get("arm_flags",{}))),raw_norm
 
 
 def _crop(notes,start,end):

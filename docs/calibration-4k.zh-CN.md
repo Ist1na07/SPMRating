@@ -1,6 +1,6 @@
 # 4K 参考标定说明
 
-[English](calibration-4k.md) · [使用说明](../README.zh-CN.md) · [评估与取舍](evaluation.zh-CN.md)
+[English](calibration-4k.md) · [使用说明](../README.zh-CN.md) · [评估与取舍](evaluation.zh-CN.md) · [完整机制](mechanism.zh-CN.md)
 
 `detail-4k` 底层运行与 v1.3.0 `detail`（`V13-D1`）完全一致的原生评分核，并通过在宽跨度 4K 段位参考集（约 741 谱）上拟合的严格单调递增分段线性映射，将 **4K raw 分**映射到 4K Dan 参考尺度。该映射保序且不改变原始分、谱面排位与局部需求场；其参考值仅在 4K 体系内对齐社区 Dan，既不是 osu! 官方星数，也不代表跨键数等效刻度。
 

@@ -79,10 +79,31 @@ class V130ProductionTests(unittest.TestCase):
         patch = read(PACKAGED / "detail-4k.json")
         self.assertEqual(patch["revision"], 2)
         self.assertIs(patch["pure"], True)
-        self.assertEqual(patch["base_model_identity"], sha256(path.read_bytes()).hexdigest())
+        canonical = path.read_bytes().replace(b"\r\n", b"\n")
+        self.assertEqual(patch["base_model_identity"], sha256(canonical).hexdigest())
+        self.assertEqual(load_model("detail").identity, patch["base_model_identity"])
         self.assertEqual(patch["frozen_sha256"], base["frozen_sha256"])
         self.assertEqual(patch["alignment"], {"4": base["alignment"]["4"]})
         self.assertTrue(all(bool(np.all(np.asarray(a["slopes"]) > 0)) for a in base["alignment"].values()))
+
+    def test_model_identity_is_independent_of_checkout_line_endings(self):
+        names = ("detail", "compact", "detail-4k")
+        with tempfile.TemporaryDirectory(prefix="spm-model-eol-") as tmp:
+            lf, crlf = Path(tmp) / "lf", Path(tmp) / "crlf"
+            lf.mkdir()
+            crlf.mkdir()
+            for name in names:
+                filename = f"{name}.json"
+                canonical = (PACKAGED / filename).read_bytes().replace(b"\r\n", b"\n")
+                (lf / filename).write_bytes(canonical)
+                (crlf / filename).write_bytes(canonical.replace(b"\n", b"\r\n"))
+            for name in names:
+                with self.subTest(model=name):
+                    expected = load_model(name, model_dir=lf)
+                    actual = load_model(name, model_dir=crlf)
+                    self.assertEqual(actual.identity, expected.identity)
+                    self.assertEqual(actual.parameters, expected.parameters)
+                    self.assertEqual(actual.alignment, expected.alignment)
 
     def test_reference_uses_positive_slopes_and_legacy_power(self):
         a = dict(domain="dan", knots=[2.0, 5.0, 9.0], slopes=[0.5, 2.0], value_at_first=1.0)

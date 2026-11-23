@@ -1,6 +1,6 @@
 # 4K reference calibration
 
-[简体中文](calibration-4k.zh-CN.md) · [Usage](../README.md) · [Evaluation](evaluation.md)
+[简体中文](calibration-4k.zh-CN.md) · [Usage](../README.md) · [Evaluation](evaluation.md) · [Full Mechanism](mechanism.md)
 
 `detail-4k` runs the same native v1.3.0 `detail` (`V13-D1`) scoring engine and maps **4K raw scores** to community Dan grades through a strictly increasing piecewise-linear calibration fitted on a wide-span 4K Dan reference panel (~741 charts). The monotone map preserves raw scores, within-4K rank order, and local demand curves. Its reference output targets 4K Dan alignment only and is neither an osu! Star Rating nor a cross-key equivalence scale.
 

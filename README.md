@@ -100,7 +100,7 @@ Input timing and segment semantics are unchanged across v1.x, though numeric sco
 | `spm_rating/clock.py` | Fractional original-clock continuous phase extension |
 | `spm_rating/models/` | Packaged model weights and reference calibrations (`detail`, `compact`, `detail-4k`) |
 
-Run `pytest tests -q -p no:cacheprovider` (or `python -m unittest discover -s tests -v`) to verify the test suite. Further technical documentation is available in [Model architecture](docs/model.md), [Evaluation and tradeoffs](docs/evaluation.md), [4K reference calibration](docs/calibration-4k.md), and [Time handling](docs/time.md) (each with a Simplified Chinese counterpart).
+Run `pytest tests -q -p no:cacheprovider` (or `python -m unittest discover -s tests -v`) to verify the test suite. Further technical documentation is available in [Full mechanism specification](docs/mechanism.md), [Model architecture](docs/model.md), [Evaluation and tradeoffs](docs/evaluation.md), [4K reference calibration](docs/calibration-4k.md), [Time handling](docs/time.md), and the [Changelog](CHANGELOG.md) (all available in Simplified Chinese).
 
 ## Earlier versions and license
 
