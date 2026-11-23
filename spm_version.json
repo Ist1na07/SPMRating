@@ -1,14 +1,28 @@
 {
   "algorithm": "spm-rating",
   "algorithm_display_name": "SPM Rating",
-  "version": "1.2.0-rc3",
-  "status": "candidate",
-  "model_variants": ["detail", "compact"],
-  "key_counts": [4, 6, 7],
+  "version": "1.3.0",
+  "status": "release",
+  "model_variants": [
+    "detail",
+    "compact",
+    "detail-4k"
+  ],
+  "default_model": "detail",
+  "inference_baseline": "1.3.0-rev2",
+  "key_counts": [
+    4,
+    6,
+    7
+  ],
   "python_version": "3.13",
   "python_module": "spm_rating",
   "base": "sunny-rework",
   "base_repository": "https://github.com/sunnyxxy/Star-Rating-Rebirth",
   "maintainer": "Ist1na",
-  "repository": "https://github.com/Ist1na07/SPMRating"
+  "repository": "https://github.com/Ist1na07/SPMRating",
+  "engine": "v130",
+  "candidate_detail": "V13-D1",
+  "candidate_compact": "V13-C",
+  "revision": 2
 }

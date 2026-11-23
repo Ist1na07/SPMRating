@@ -1,12 +1,14 @@
 """Batch scoring entry point; the same API serves whole charts and segments."""
 import argparse,csv,json,sys
 from pathlib import Path
-from . import load_model,rate_file
+from . import __version__,load_model,rate_file
+from .api import MODEL_NAMES
 
 def main():
-    p=argparse.ArgumentParser(description='SPM Rating v1.2.0 chart and segment difficulty')
+    p=argparse.ArgumentParser(description=f'SPM Rating {__version__} chart and segment difficulty')
     p.add_argument('paths',nargs='+',help='.osu file or directory')
-    p.add_argument('--model',choices=['detail','compact'],default='detail',help='detail=detailed model; compact=simpler model')
+    p.add_argument('--model',choices=MODEL_NAMES,default='detail',
+                   help='detail=V13-D1 detailed; compact=V13-C faster; detail-4k=detail with the frozen 4K Dan mapping')
     p.add_argument('--rate',type=float,default=1.)
     p.add_argument('--scale',choices=['reference','raw'],default='reference')
     p.add_argument('--start-ms',type=float);p.add_argument('--end-ms',type=float)

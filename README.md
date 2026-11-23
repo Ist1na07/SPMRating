@@ -1,44 +1,50 @@
-# SPM Rating v1.2.0-rc3
+# SPM Rating
 
 [简体中文](README.zh-CN.md)
 
-This candidate provides detailed (`detail`) and compact (`compact`) difficulty models for osu!mania. Both support 4-key, 6-key, and 7-key charts, speed changes, and whole-chart or segment scoring.
+SPM Rating estimates pattern and physical difficulty for 4-key (4K), 6-key (6K), and 7-key (7K) osu!mania charts and local segments. Built on the sunny-rework coordinate representation, v1.3.0 ships two frozen scoring profiles—**`detail`** (`V13-D1`) for general use and **`compact`** (`V13-C`) for faster batch evaluation—together with **`detail-4k`** for 4K Dan reference workflows.
 
 ## Install and run
 
-Use Python 3.13 and run these commands from this directory:
+Requires Python 3.13. Run from the repository root:
 
 ```bash
 python -m pip install -r requirements.txt
 python -m spm_rating examples/Control_P_120.osu
 ```
 
-On Windows, `install_dependencies.cmd` installs dependencies and `open_scorer.cmd` opens the desktop scorer. On other systems, use `python -m spm_rating.gui` if Python includes Tk. The first score may take longer while Numba compiles numerical functions.
+On Windows, `install_dependencies.cmd` installs dependencies and `open_scorer.cmd` launches the desktop scorer. On other systems whose Python build includes Tk, run `python -m spm_rating.gui`. The first scoring call may take slightly longer while Numba compiles numerical kernels.
 
-## Choose a model
+## Model profiles
 
-| | Detailed: `detail` | Compact: `compact` |
+| Profile | Parameters & pass mode | Intended use |
 |---|---|---|
-| Suggested use | General scoring, especially charts with long notes | A slightly simpler model for comparison and research |
-| Weighted development ranking correlation | 0.988334 | 0.988271 |
-| Local 12-segment ranking correlation | 0.866219 | 0.866219 |
-| Long-note set ranking correlation | 0.904663 | 0.899101 |
+| **Detail** · `detail` | 78 fitted continuous parameters; symmetric dual mirrored pass | Default general-purpose scoring (~73.9 ms/chart warm median on 64 parsed 7K charts) |
+| **Compact** · `compact` | 70 fitted continuous parameters; single canonical pass (omits `lockanchor` and `shield`) | High-throughput batch scoring (~36.4 ms/chart warm median; ~2.3× faster than RC3 `detail`) |
+| **4K Dan** · `detail-4k` | Identical native scorer to `detail` | Dedicated 4K CLI/API/GUI workflows using the v1.3.0 piecewise-linear 4K Dan calibration |
 
-Both models price actions performed by fingers recently occupied by long notes. The detailed model also retains a conditional hold-duration component. The compact model disables that component, retiring two amplitudes and their duration threshold and cap from active use. The remaining coordination components are shared.
+All profiles use nonnegative native row-grid long-note coordination, a cubic jack-versus-technique Hill gate, bounded causal stamina, and exact engagement-mass-weighted Log-Logistic Row Sigmoid aggregation. Model tradeoffs, synthetic control checks, and benchmark results are documented in [Evaluation and tradeoffs](docs/evaluation.md).
 
-Each parameter file keeps 291 configuration fields, including fixed values and disabled branches, plus one finger-role price. This is a modest simplification within a feature-rich model. See the [evaluation notes](docs/evaluation.md) for the ranking metric and sample definitions.
+To load an archived legacy model directory explicitly in Python:
+
+```python
+load_model("detail", model_dir="path/to/archived_models")
+```
+
+Historical model weights remain accessible through Git history. Current `detail-4k` applies the v1.3.0 monotone piecewise-linear Dan map rather than historical power curves; see [4K reference calibration](docs/calibration-4k.md).
 
 ## Command line
 
 ```bash
 python -m spm_rating "path/to/chart.osu" --model detail
+python -m spm_rating "path/to/4k-chart.osu" --model detail-4k
 python -m spm_rating "path/to/chart.osu" --model compact --rate 1.5
 python -m spm_rating "path/to/Songs" --csv scores.csv
 python -m spm_rating "path/to/chart.osu" --start-ms 30000 --end-ms 45000
 python -m spm_rating "path/to/chart.osu" --start-ms 30000 --end-ms 45000 --scope isolated
 ```
 
-The command accepts files or directories and prints one JSON object per chart. A failed chart receives an `error` field; other charts continue. The command exits with status 1 if any chart failed.
+The CLI accepts single `.osu` files or directories and emits one JSON object per chart (or writes `--csv`). Charts that fail parsing or validation record an `error` field while remaining charts continue; the process exits with code `1` if any chart failed.
 
 ## Python interface
 
@@ -59,44 +65,45 @@ with open("path/to/chart.osu", encoding="utf-8-sig") as file:
     same_chart = rate_content(file.read(), model)
 ```
 
-`rate_notes` accepts an already parsed chart. A model name also works directly: `rate_file(path, "compact")`. The model object exposes a read-only parameter mapping.
+`rate_notes` scores an already parsed note structure, and string profile names are accepted directly (`rate_file(path, "compact")`). `model.parameters` exposes a read-only parameter mapping.
 
 ### Scores
 
-`raw_score` is the model's native output. `reference_score` applies a positive power-law alignment to each key-count's supplied labels. `score` follows the selected `scale`; the default is `reference` on the command line and `raw` in Python. The 4-key, 6-key, and 7-key reference scales are calibrated separately. Cross-key comparisons need additional validation. osu!'s official star-rating system uses its own scale.
+`raw_score` is the model's native scale-homogeneous output. `reference_score` applies a frozen, strictly increasing piecewise-linear map aligned separately per key count: `dan` for 4K, `lv` for 6K, and `dan_sr` for 7K. `score` follows the selected `scale` (`reference` by default on the CLI, `raw` by default in Python). Key-count scales are calibrated independently and should not be compared across key counts without separate cross-key validation. osu!'s official Star Rating uses a different scale.
 
 ### Segments
 
-Boundaries use milliseconds **after applying the speed rate**. The interval includes its start and excludes its end. At rate 1.5, original times 30000–45000 ms correspond to segment arguments 20000–30000 ms.
+Boundaries use milliseconds **after applying `--rate` / `rate`**, half-open as `[start_ms, end_ms)`. For example, at rate `1.5`, original timestamps `30000–45000 ms` correspond to arguments `start_ms=20000, end_ms=30000`.
 
-`context` reads demand from the full chart and aggregates the selected heads. `isolated` rebuilds the selected chart, dropping incoming long notes and clipping outgoing tails at its end. A rated segment needs at least two physical heads. Headless holding segments are outside the current scoring interface.
+`context` computes demand over the entire chart and aggregates the selected rows; `isolated` rebuilds the trimmed chart segment, dropping incoming long notes and clipping outgoing tails at `end_ms`. Every segment requires at least two physical note heads; headless holding-only spans fall outside the interface.
 
-`include_curve=True` returns NumPy arrays `query` and `field`. For fractional original times, the curve averages phase-specific curves; the scalar averages their individually aggregated scores. [Time handling](docs/time.md) explains the distinction.
+`include_curve=True` returns NumPy arrays `query` and `field`. For charts authored with fractional original timestamps, `field` averages phase-specific demand curves while the scalar averages individually aggregated scores; see [Time handling](docs/time.md).
 
 ## Inputs and performance
 
-Exact duplicate objects on one key are merged. Simultaneous objects on one physical key with conflicting tails raise an error. The parser embeds 4-key and 6-key charts in a symmetric seven-column frame.
+Exact duplicate objects on the same column are merged before scoring; simultaneous objects on the same physical key with conflicting long-note tails raise an error. The parser embeds 4K and 6K layouts in a symmetric seven-column coordinate frame.
 
-Integer-millisecond charts and their speed-modified versions use one native scoring pass. Fractional original timestamps use exact phase averaging and may require more passes. Python callers can supply `cancel=callback`; cancellation is checked between phase passes. The desktop scorer offers a Stop button.
+Integer-millisecond `.osu` charts and their speed-modified versions run in one native forward pass with exact `0.0` aggregation-origin phase spread. Charts with fractional original-clock timestamps use exact shared-phase integration over the rounding interval ([Time handling](docs/time.md)). Python callers can pass `cancel=callback`, checked between clock phase passes; the desktop UI provides a **Stop** control.
 
-General staircase-jack and switching patterns remain an open modeling area. The present finger-role cost addresses sustained occupation followed by further actions. Additional chart collections and player comparisons can help assess how this transfers to other patterns.
+Input timing and segment semantics are unchanged across v1.x, though numeric scores from v1.3.0 are not directly interchangeable with earlier releases.
 
-## Source and checks
+## Source and tests
 
 | Path | Contents |
 |---|---|
-| `spm_rating/api.py` | Whole-chart and segment interface |
-| `spm_rating/engine.py` | Symmetric two-view scoring pipeline |
-| `spm_rating/_core/` | Chart structures, component curves, combination, aggregation |
-| `spm_rating/hand.py`, `role.py` | Shared contact accounting and finger occupation |
-| `spm_rating/geometry.py`, `coordinates.py` | Cross-column transitions |
-| `spm_rating/recovery.py`, `clock.py` | Recovery context and time extension |
-| `spm_rating/models/` | Completed model parameters and output alignments |
+| `spm_rating/api.py` | Whole-chart and segment API, piecewise-linear and legacy power calibration |
+| `spm_rating/v130_rev2.py` | v1.3.0 native demand kernels, Hill gate, and mass-weighted Row Sigmoid root solver |
+| `spm_rating/v130_engine.py`, `phase_average.py` | Structural state representation and mirror-averaging support |
+| `spm_rating/_core/` | Chart containers, component demand curves, coordination, and primitives |
+| `spm_rating/hand.py`, `role.py` | Shared hand-contact accounting and sustained finger-occupation costs |
+| `spm_rating/geometry.py`, `coordinates.py` | Cross-column transition geometry and symmetric 7-column embedding |
+| `spm_rating/clock.py` | Fractional original-clock continuous phase extension |
+| `spm_rating/models/` | Packaged model weights and reference calibrations (`detail`, `compact`, `detail-4k`) |
 
-Run `python -m unittest discover -s tests -v` for the included checks. Read the [model guide](docs/model.md), [evaluation](docs/evaluation.md), and [time handling](docs/time.md) for further details. Each document has a Chinese counterpart.
+Run `pytest tests -q -p no:cacheprovider` (or `python -m unittest discover -s tests -v`) to verify the test suite. Further technical documentation is available in [Model architecture](docs/model.md), [Evaluation and tradeoffs](docs/evaluation.md), [4K reference calibration](docs/calibration-4k.md), and [Time handling](docs/time.md) (each with a Simplified Chinese counterpart).
 
-## Earlier versions
+## Earlier versions and license
 
-The [v1.1.1 source snapshot](https://github.com/Ist1na07/SPMRating/tree/11064c7d73370e9d8b7d1fff1d9ccf740829c6af) contains its original implementation and `spm_interface` entry point. Earlier versions remain available through the Git history.
+The [v1.1.1 source snapshot](https://github.com/Ist1na07/SPMRating/tree/11064c7d73370e9d8b7d1fff1d9ccf740829c6af) preserves the original implementation and `spm_interface` entry point; earlier snapshots remain available in Git history.
 
-Code uses the [MIT license](LICENSE). Architectural attribution and example provenance are recorded in [NOTICE](NOTICE).
+Licensed under the [MIT License](LICENSE). Architectural provenance and example asset credits are documented in [NOTICE](NOTICE).

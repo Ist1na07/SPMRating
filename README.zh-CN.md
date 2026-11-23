@@ -1,44 +1,50 @@
-# SPM Rating v1.2.0-rc3
+# SPM Rating
 
 [English](README.md)
 
-候选包提供完整模型 `detail` 和精简模型 `compact`，用于计算 osu!mania 难度。两支均支持4键、6键、7键、速度倍率，以及整谱和局部评分。
+SPM Rating 为 osu!mania 的 4 键（4K）、6 键（6K）及 7 键（7K）谱面提供整谱与局部区间难度评估。系统基于 sunny-rework 坐标系演进而来，v1.3.0 提供两支冻结生产模型——日常高精度模型 **`detail`**（`V13-D1`）与高速批量模型 **`compact`**（`V13-C`）——并保留 **`detail-4k`** 兼容现有 4K 段位调用接口。
 
 ## 安装与运行
 
-使用 Python 3.13，在本目录运行：
+请使用 Python 3.13，并在仓库根目录运行：
 
 ```bash
 python -m pip install -r requirements.txt
 python -m spm_rating examples/Control_P_120.osu
 ```
 
-Windows 用户可运行 `install_dependencies.cmd` 安装依赖，双击 `open_scorer.cmd` 打开桌面评分器。其他系统的 Python 若包含 Tk，可使用 `python -m spm_rating.gui`。首次评分时，Numba 编译数值函数可能花费额外时间。
+Windows 用户可双击或运行 `install_dependencies.cmd` 安装依赖，运行 `open_scorer.cmd` 启动桌面评分界面。其他系统的 Python 若包含 Tk，可执行 `python -m spm_rating.gui`。首次调用会编译 Numba 数值内核，耗时略长属正常现象。
 
 ## 模型选择
 
-| | 完整模型：`detail` | 精简模型：`compact` |
+| 配置名 | 参数与计算模式 | 适用场景 |
 |---|---|---|
-| 建议用途 | 日常评分，尤其是包含长条的谱面 | 使用稍简单的模型进行比较与研究 |
-| 开发评估加权排序相关系数 | 0.988334 | 0.988271 |
-| 局部12段排序相关系数 | 0.866219 | 0.866219 |
-| 长条集合排序相关系数 | 0.904663 | 0.899101 |
+| **完整** · `detail` | 78 个连续拟合参数；双镜像对称前向计算 | 默认常规评分（64 张 7K 开发谱已解析输入下中位耗时约 73.9 ms/谱） |
+| **精简** · `compact` | 70 个连续拟合参数；规范化单方向前向计算（省略 `lockanchor` 与 `shield`） | 大批量高速评分（热态中位耗时约 36.4 ms/谱，约为 RC3 `detail` 的 2.3 倍速度） |
+| **4K 段位** · `detail-4k` | 底层复用 `detail` 原生评分器 | 保留既有 4K 调用名称，并绑定 v1.3.0 分段线性 4K 段位参考映射 |
 
-两支模型都衡量手指近期持续持键后继续动作的费用。完整模型还保留条件持续时间组件。精简模型关闭这一组件，使两个幅度以及持续时间阈值、上限退出有效作用；其余协调组件继续共用。
+两支模型均采用非负原生行网格长条协调、三次 Hill 连打-技术门控、因果有界耐力以及按有效接触物量加权的 Log-Logistic 行级 Sigmoid 求根聚合。评估结果、合成控谱检查与尚存取舍见[评估与模型取舍](docs/evaluation.zh-CN.md)。
 
-每份参数文件保留291个配置字段，包括固定值和关闭分支，另有一个手指角色幅度。精简是在一个特征较多的模型内进行的适度调整。[评估说明](docs/evaluation.zh-CN.md) 介绍指标定义与样本。
+如需在 Python 中显式加载已归档的历史模型目录，可传入 `model_dir`：
 
-## 命令行
+```python
+load_model("detail", model_dir="path/to/archived_models")
+```
+
+早期版本参数可通过 Git 历史获取。当前 `detail-4k` 采用 v1.3.0 单调分段线性 Dan 映射，不再沿用早期幂函数覆盖曲线；详见[4K 参考标定说明](docs/calibration-4k.zh-CN.md)。
+
+## 命令行使用
 
 ```bash
 python -m spm_rating "path/to/chart.osu" --model detail
+python -m spm_rating "path/to/4k-chart.osu" --model detail-4k
 python -m spm_rating "path/to/chart.osu" --model compact --rate 1.5
 python -m spm_rating "path/to/Songs" --csv scores.csv
 python -m spm_rating "path/to/chart.osu" --start-ms 30000 --end-ms 45000
 python -m spm_rating "path/to/chart.osu" --start-ms 30000 --end-ms 45000 --scope isolated
 ```
 
-命令接受文件或目录，每张谱面输出一个JSON对象。计算失败的谱面带有 `error` 字段，其他谱面继续处理。如果有谱面失败，命令以状态码1退出。
+命令接受单个 `.osu` 文件或目录，为每张谱面输出一条 JSON 记录（也可配合 `--csv` 导出表格）。单张谱面解析或校验失败时会在该条记录写入 `error` 字段，其余谱面正常继续；若存在任何失败项，进程以退出码 `1` 结束。
 
 ## Python 接口
 
@@ -59,44 +65,46 @@ with open("path/to/chart.osu", encoding="utf-8-sig") as file:
     same_chart = rate_content(file.read(), model)
 ```
 
-`rate_notes` 接受已经解析的谱面。也可直接传入模型名称，例如 `rate_file(path, "compact")`。模型对象提供只读的参数映射。
+`rate_notes` 支持直接传入已解析谱面对象；也可直接传模型名称字符串（例如 `rate_file(path, "compact")`）。模型对象的 `parameters` 属性暴露只读参数字典。
 
-### 分数
+### 分数尺度
 
-`raw_score` 是模型原始输出；`reference_score` 通过正幂函数对齐到各键数的标注尺度。`score` 跟随所选 `scale`：命令行默认使用 `reference`，Python 默认使用 `raw`。4键、6键和7键分别校准，跨键数比较仍需额外验证。osu! 官方星数使用自身的尺度。
+`raw_score` 为模型原生输出，具备严格正尺度齐次性；`reference_score` 则经由各键数独立拟合的冻结严格单调递增分段线性映射转换：4K 为 `dan`，6K 为 `lv`，7K 为 `dan_sr`。`score` 字段随 `scale` 切换（CLI 默认输出 `reference`，Python 默认输出 `raw`）。不同键数各自独立标定，跨键数直接横向对比仍需额外校准；osu! 官方星数采用独立体系。
 
 ### 局部段落
 
-边界的单位是**应用速度倍率之后的毫秒**。区间包含起点、排除终点。例如速度倍率为1.5时，原谱30000至45000毫秒对应参数20000至30000毫秒。
+时间边界使用**应用倍速 `--rate` / `rate` 之后的毫秒数**，按左闭右开 `[start_ms, end_ms)` 切片。例如倍率为 `1.5` 时，原谱 `30000–45000 ms` 对应 `--start-ms 20000 --end-ms 30000`。
 
-`context` 从整谱读取局部需求，再聚合选定的按下。`isolated` 重新建立选定谱面，丢弃来自区间前的长条，并将去向长条截至区间末尾。局部至少需要两个物理按下；没有按下的纯静持区间暂不提供评分。
+- `context` 模式先在整谱上计算上下文需求场，再对目标区间内行聚合评分；
+- `isolated` 模式独立重建切片区间，丢弃区间前延续进来的长条，并将穿出 `end_ms` 的长条在终点截断。
 
-`include_curve=True` 返回 NumPy 数组 `query` 和 `field`。对于原始时间含小数的谱面，曲线是各相位曲线的平均，标量则平均各相位分别聚合后的评分。[时间处理](docs/time.zh-CN.md) 进一步说明两者的区别。
+每个受评区间至少需包含两个物理音头；无音头的纯长条持键区间不在接口支持范围内。设置 `include_curve=True` 时会返回 NumPy 数组 `query` 与 `field`。当原谱带有小数时间戳时，`field` 为各相位的平均局部曲线，标量分则为各相位分别完成非线性聚合后的积分平均；详见[时间处理](docs/time.zh-CN.md)。
 
-## 输入与性能
+## 输入处理与性能特征
 
-同键上完全重复的对象会合并。同刻同键但尾部冲突的对象会报错。解析器将4键与6键嵌入对称的七列坐标。
+同列完全重复对象会在评分前自动合并；同一时刻同一物理列出现尾部冲突的双重对象会报错退出。解析器将 4 键与 6 键统一嵌入对称七列坐标系。
 
-普通整数毫秒谱及其变速版本进行一次原生评分。原始时间含小数时，精确相位平均可能需要多次评分。Python 调用者可传入 `cancel=callback`，程序在相位之间检查停止信号；桌面评分器也提供停止按钮。
+常规整数毫秒 `.osu` 谱面及常用倍速仅运行一次原生前向计算，且聚合原点相位极差严格为 `0.0`。原始时刻含小数的谱面则会触发原谱时钟相位精确积分（[时间处理](docs/time.zh-CN.md)）。Python 接口可传 `cancel=callback`，程序在相位步间检查取消信号；桌面界面提供 **Stop / 停止** 按钮。
 
-普遍楼梯叠与切键仍是有待发展的建模问题。当前手指角色费用针对持续占用后继续动作的负担。更多谱面集合和玩家对照有助于了解它在其他键型中的表现。
+v1.3.0 保持时间与区间契约兼容，但原始分及参考分数值不与 RC3 或早期 v1.x 版本直接通用。
 
-## 源码与检查
+## 源码与测试
 
 | 路径 | 内容 |
 |---|---|
-| `spm_rating/api.py` | 整谱和局部接口 |
-| `spm_rating/engine.py` | 两个镜像视角的对称评分流程 |
-| `spm_rating/_core/` | 谱面结构、局部组件、组合与聚合 |
-| `spm_rating/hand.py`、`role.py` | 共同接触预算与手指占用费用 |
-| `spm_rating/geometry.py`、`coordinates.py` | 跨列转移 |
-| `spm_rating/recovery.py`、`clock.py` | 恢复上下文与时间延拓 |
-| `spm_rating/models/` | 完成的模型参数和输出尺度 |
+| `spm_rating/api.py` | 整谱与局部评分接口、分段线性与历史幂函数参考映射 |
+| `spm_rating/v130_rev2.py` | v1.3.0 原生需求核、Hill 门控与物量加权行 Sigmoid 求解器 |
+| `spm_rating/v130_engine.py`、`phase_average.py` | 结构状态封装与双镜像后平均支撑 |
+| `spm_rating/_core/` | 谱面结构容器、分项曲线、长条协调与基础原语 |
+| `spm_rating/hand.py`、`role.py` | 手部共同接触分配与持续占键条件负担 |
+| `spm_rating/geometry.py`、`coordinates.py` | 跨列转移几何与对称七列映射 |
+| `spm_rating/clock.py` | 原谱小数时刻连续相位延拓 |
+| `spm_rating/models/` | 打包模型权重与域参考映射（`detail`、`compact`、`detail-4k`） |
 
-运行 `python -m unittest discover -s tests -v` 可执行附带检查。[模型说明](docs/model.zh-CN.md)、[评估结果](docs/evaluation.zh-CN.md)和[时间处理](docs/time.zh-CN.md)均有英文版本。
+运行 `pytest tests -q -p no:cacheprovider`（或 `python -m unittest discover -s tests -v`）执行测试套件。更多技术说明见[模型原理](docs/model.zh-CN.md)、[评估与模型取舍](docs/evaluation.zh-CN.md)、[4K 参考标定说明](docs/calibration-4k.zh-CN.md)及[时间处理](docs/time.zh-CN.md)（均备有英文版）。
 
-## 历史版本
+## 历史版本与许可
 
-[v1.1.1源码快照](https://github.com/Ist1na07/SPMRating/tree/11064c7d73370e9d8b7d1fff1d9ccf740829c6af)保留该版本的原始实现与 `spm_interface` 入口。更早版本可通过 Git 历史记录获取。
+[v1.1.1 源码快照](https://github.com/Ist1na07/SPMRating/tree/11064c7d73370e9d8b7d1fff1d9ccf740829c6af)保留了初代实现与 `spm_interface` 入口，其余更早版本见 Git 历史。
 
-代码采用 [MIT许可](LICENSE)，架构来源与示例说明见[项目说明与致谢](NOTICE.zh-CN.md)。
+代码基于 [MIT 许可](LICENSE)开源，架构来源与示例素材说明见[项目说明与致谢](NOTICE.zh-CN.md)。

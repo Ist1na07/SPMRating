@@ -1,11 +1,13 @@
 """Whole-chart and context/isolated segment scoring, independent of research."""
-from dataclasses import dataclass,replace
+from dataclasses import dataclass,field,replace
 from pathlib import Path
 from types import MappingProxyType
 import hashlib,json,math
 import numpy as np
 from . import engine,role
 from . import clock
+
+MODEL_NAMES=('detail','compact','detail-4k')
 
 @dataclass(frozen=True)
 class Model:
@@ -15,14 +17,95 @@ class Model:
     alignment:object
     identity:str
     physical_objects:bool=True
+    engine:str="legacy"
+    candidate:str|None=None
+    compact:bool=False
+    motion:bool=False
+    fixed_parameters:object=field(default_factory=lambda:MappingProxyType({}))
+    revision:int=1
+    arm_flags:object=field(default_factory=lambda:MappingProxyType({}))
 
-def load_model(name):
-    if name not in ['detail','compact']:raise ValueError('Unknown model name.')
-    path=Path(__file__).resolve().parent/'models'/(name+'.json')
-    if not path.exists():raise ValueError('Model file is missing.')
-    raw=path.read_bytes();data=json.loads(raw)
-    if not data.get('completed_validation',False):raise ValueError('Model validation is unfinished.')
-    return Model(name,MappingProxyType(data['parameters']),float(data['role_price']),MappingProxyType(data.get('alignment',{})),hashlib.sha256(raw).hexdigest(),bool(data.get('physical_objects',True)))
+
+def _checked_alignment(value):
+    data=dict(value)
+    if "knots" in data:
+        k=np.asarray(data["knots"],dtype=np.float64)
+        a=np.asarray(data["slopes"],dtype=np.float64)
+        c=float(data["value_at_first"])
+        if (k.ndim!=1 or a.ndim!=1 or len(k)<2 or len(a)!=len(k)-1
+                or not np.all(np.isfinite(k)) or not np.all(np.diff(k)>0.)
+                or not np.all(np.isfinite(a)) or not np.all(a>0.) or not math.isfinite(c)):
+            raise ValueError("Reference calibration needs increasing finite knots and positive finite slopes.")
+        data.update(knots=tuple(k),slopes=tuple(a),value_at_first=c)
+    elif not all(math.isfinite(data[k]) and data[k]>0 for k in ("scale","power")):
+        raise ValueError("Reference calibration needs a positive finite scale and power.")
+    data["domain"]=data.get("domain") or data.get("unit")
+    if not isinstance(data["domain"],str) or not data["domain"]:
+        raise ValueError("Reference calibration needs a domain name.")
+    return MappingProxyType(data)
+
+
+def _align_checked(calibration,raw):
+    if "knots" not in calibration:
+        return float(calibration["scale"]*raw**calibration["power"])
+    knots=calibration["knots"]
+    # Use the same shape, matmul and operation order as the frozen exporter.
+    x=np.asarray([raw],dtype=np.float64)
+    slopes=np.asarray(calibration["slopes"])
+    d=np.column_stack([np.minimum(np.maximum(x-a,0.),b-a) for a,b in zip(knots[:-1],knots[1:])])
+    y=calibration["value_at_first"]+d@slopes
+    return float((y+slopes[0]*np.minimum(x-knots[0],0.)+slopes[-1]*np.maximum(x-knots[-1],0.))[0])
+
+
+def align(calibration,raw):
+    """Apply a strictly increasing piecewise-linear or legacy power mapping."""
+    return _align_checked(_checked_alignment(calibration),float(raw))
+
+
+def load_model(name, *, model_dir=None):
+    """Load a packaged model, or an explicit directory of legacy/model JSONs."""
+    if name not in MODEL_NAMES:
+        raise ValueError("Unknown model name.")
+    root=Path(model_dir) if model_dir is not None else Path(__file__).resolve().parent/"models"
+    path=root/(name+".json")
+    if not path.is_file():
+        raise ValueError("Model file is missing.")
+    raw=path.read_bytes()
+    data=json.loads(raw)
+    if not data.get("completed_validation",False):
+        raise ValueError("Model validation is unfinished.")
+    kind=data.get("engine","legacy")
+    revision=data.get("revision",1)
+    if revision not in (1,2) or (revision==2 and (kind!="v130" or data.get("pure") is not True)):
+        raise ValueError("Unsupported scoring engine or revision.")
+    if kind not in ("legacy","v130"):
+        raise ValueError("Unknown scoring engine.")
+    alignment={k:_checked_alignment(v) for k,v in data.get("alignment",{}).items()}
+    if name=="detail-4k":
+        base=load_model("detail",model_dir=root)
+        if data["base_model_identity"]!=base.identity or kind!=base.engine or revision!=base.revision:
+            raise ValueError("4K alignment requires the validated detail model.")
+        if set(alignment)!={"4"}:
+            raise ValueError("Expected a 4K-only alignment.")
+        identity=hashlib.sha256(bytes.fromhex(base.identity)+raw).hexdigest()
+        return replace(base,name=name,alignment=MappingProxyType({**base.alignment,**alignment}),identity=identity)
+    p=MappingProxyType(data["parameters"])
+    fixed=MappingProxyType(data.get("fixed_parameters",{}))
+    if kind=="v130":
+        if revision==2:
+            from .v130_rev2 import validate
+            validate(p,bool(data.get("compact",False)),data.get("arm_flags",{}))
+        elif revision==1:
+            from .v130_engine import parameter_vector
+            parameter_vector(p,fixed)
+        else:
+            raise ValueError("Unsupported v1.3.0 revision.")
+        if set(alignment)!={"4","6","7"}:
+            raise ValueError("v1.3.0 requires validated 4K, 6K and 7K reference maps.")
+    return Model(name,p,float(data.get("role_price",p.get("role_price",fixed.get("role_price",0.)))),
+                 MappingProxyType(alignment),hashlib.sha256(raw).hexdigest(),bool(data.get("physical_objects",True)),
+                 kind,data.get("candidate"),bool(data.get("compact",False)),bool(data.get("motion",False)),fixed,revision,MappingProxyType(data.get("arm_flags",{})))
+
 
 def _crop(notes,start,end):
     take=(notes.time>=start)&(notes.time<end)
@@ -51,16 +134,65 @@ def _rate_notes_grid(notes,model,*,start_ms=None,end_ms=None,scope='context',sca
             if np.any(positions>=len(result['query'])) or not np.array_equal(result['query'][positions],s.t):raise RuntimeError('Context query identity mismatch.')
             d=result['field'][positions];raw=float(e.M.postprocess(s,e.M.aggregate(s,d,p,hold_w=True),p)[0]);result={**result,'raw_score':raw,'field':d,'query':s.t}
     raw=float(result['raw_score']);aligned=None;calibration=model.alignment.get(str(notes.key_count))
-    if calibration is not None:aligned=float(calibration['scale']*raw**calibration['power'])
+    if calibration is not None:aligned=_align_checked(calibration,raw)
     if scale=='reference' and aligned is None:raise ValueError('This model has no validated reference scale for this key count.')
     out=dict(model=model.name,model_identity=model.identity,score=raw if scale=='raw' else aligned,raw_score=raw,reference_score=aligned,units='raw' if scale=='raw' else calibration['domain'],key_count=notes.key_count,rate=notes.rate,heads=rated.n_notes,ln_heads=rated.n_ln,scope=scope if segment else 'whole',start_ms=start_ms,end_ms=end_ms)
     if include_curve:out.update(query=result['query'].copy(),field=result['field'].copy())
     return out
 
+def _v130_public(notes,model,options,cancel):
+    from . import v130_engine as core
+    scope,scale=options["scope"],options["scale"]
+    include=options["include_curve"]
+    start_ms,end_ms=options["start_ms"],options["end_ms"]
+    if scale not in ("raw","reference"):
+        raise ValueError("Choose raw or reference.")
+    physical=core.physical_notes(notes)
+    start,end,segment=core.segment_limits(start_ms,end_ms,scope)
+    rated=core.crop(physical,start,end) if segment else physical
+    plan=clock.plan(physical,[end] if segment else ())
+    if plan is None:
+        result=core.predict_pair(physical,rated,model,scope=scope,include_curve=include,cancel=cancel)
+    else:
+        # Select the segment on observed times, then transport that same head
+        # set through each clock phase. Cutoffs do not admit outside heads.
+        selected=(physical.time>=start)&(physical.time<end)
+        query=core.query_grid(rated) if include else None
+        curve=np.zeros(len(query)) if include else None
+        raw=0.
+        for weight,s,phase,order in clock.states(physical,plan):
+            core.check_cancel(cancel)
+            if segment:
+                limit=float(clock.quantize([end],phase,plan)[0]) if math.isfinite(end) else end
+                child=core.crop(s,mask=selected[order],end=limit)
+            else:
+                child=s
+            z=core.predict_pair(s,child,model,scope=scope,include_curve=include,cancel=cancel)
+            raw+=weight*z["raw_score"]
+            if include:
+                q=clock.quantize(query,phase,plan)
+                curve+=weight*np.interp(q,z["query"],z["field"])
+        result=dict(raw_score=raw,query=query,field=curve)
+    raw=float(result["raw_score"])
+    cal=model.alignment.get(str(physical.key_count))
+    ref=_align_checked(cal,raw) if cal is not None else None
+    if scale=="reference" and ref is None:
+        raise ValueError("This model has no validated reference scale for this key count.")
+    out=dict(model=model.name,model_identity=model.identity,score=raw if scale=="raw" else ref,
+             raw_score=raw,reference_score=ref,units="raw" if scale=="raw" else cal["domain"],
+             key_count=physical.key_count,rate=physical.rate,heads=rated.n_notes,ln_heads=rated.n_ln,
+             scope=scope if segment else "whole",start_ms=start_ms,end_ms=end_ms)
+    if include:
+        out.update(query=result["query"].copy(),field=result["field"].copy())
+    return out
+
+
 def rate_notes(notes,model,*,start_ms=None,end_ms=None,scope='context',scale='raw',include_curve=False,cancel=None):
     if cancel is not None and cancel():raise InterruptedError('计算已停止。')
     if isinstance(model,str):model=load_model(model)
     options=dict(start_ms=start_ms,end_ms=end_ms,scope=scope,scale=scale,include_curve=include_curve)
+    if model.engine=="v130":
+        return _v130_public(notes,model,options,cancel)
     if notes is None or notes.n_notes<2 or scope not in ['context','isolated'] or scale not in ['raw','reference']:
         return _rate_notes_grid(notes,model,**options)
     end=float(end_ms) if end_ms is not None else math.inf
@@ -91,7 +223,7 @@ def rate_notes(notes,model,*,start_ms=None,end_ms=None,scope='context',scale='ra
         raw+=weight*result['raw_score']
         if include_curve:
             target=clock.quantize(baseline['query'],phase,pclock);curve+=weight*np.interp(target,result['query'],result['field'])
-    calibration=model.alignment.get(str(notes.key_count));aligned=float(calibration['scale']*raw**calibration['power']) if calibration is not None else None
+    calibration=model.alignment.get(str(notes.key_count));aligned=_align_checked(calibration,raw) if calibration is not None else None
     if scale=='reference' and aligned is None:raise ValueError('This model has no validated reference scale for this key count.')
     out={**baseline,'raw_score':float(raw),'reference_score':aligned,'score':float(raw) if scale=='raw' else aligned,'units':'raw' if scale=='raw' else calibration['domain']}
     if include_curve:out['field']=curve
@@ -104,3 +236,6 @@ def rate_file(path,model,*,rate=1.,**options):
 def rate_content(content,model,*,rate=1.,**options):
     if not math.isfinite(rate) or rate<=0:raise ValueError('Positive finite speed rate required.')
     return rate_notes(engine.get().parser.parse_content(content,rate=rate),model,**options)
+
+
+predict_notes = rate_notes

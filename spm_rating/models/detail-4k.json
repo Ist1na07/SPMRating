@@ -1,0 +1,43 @@
+{
+  "name": "detail-4k",
+  "version": "1.3.0",
+  "revision": 2,
+  "pure": true,
+  "engine": "v130",
+  "completed_validation": true,
+  "base_model_identity": "cc1d6cea818f22984cd87f8e2dbb0f49a191ca3683e16ca7caffdd3fb8ab0880",
+  "alignment": {
+    "4": {
+      "knots": [
+        3.2767359421971474,
+        6.886942099153486,
+        9.698911745289498,
+        11.344517792505238,
+        12.058138234983955,
+        12.794137200845574,
+        14.977060743622108
+      ],
+      "value_at_first": 0.980207537343808,
+      "slopes": [
+        1.6317992678530993,
+        1.6546050746402656,
+        1.33184546394922,
+        1.180347791506505,
+        1.1908487170745368,
+        1.3809217046490216
+      ],
+      "row_count": 741,
+      "tech_training_count": null,
+      "slope_range": [
+        0.519734382430619,
+        2.6729196810717553
+      ],
+      "regularization": {
+        "affine": 0.1,
+        "adjacent": 0.04
+      },
+      "unit": "dan"
+    }
+  },
+  "frozen_sha256": "8737fc2a6ad228268588ac4d9c40a2b5abfc49bc7a1b0da1fe292b473cb32116"
+}

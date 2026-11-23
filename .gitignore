@@ -10,3 +10,4 @@ cache/
 *.npz
 *.npy
 scores.csv
+docs/local/

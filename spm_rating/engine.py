@@ -20,10 +20,10 @@ class Engine:
         builder.__kwdefaults__=original.__kwdefaults__
         data=builder([SimpleNamespace(id='chart',path='chart')],parse_cache=False)
         return model.build_struct(data,p)
-    def predict(self,notes,p,role_price,*,with_zero=False):
+    def _components(self,notes,p,role_price):
         other=mirror(notes)
         if (other.col.tobytes(),other.ln_end.tobytes())<(notes.col.tobytes(),notes.ln_end.tobytes()):notes,other=other,notes
-        sources=[];reference=None
+        sources=[]
         for nt in [notes,other]:
             local={**p,'x_jump_w':0.}
             s=self.build(nt,local)
@@ -31,16 +31,21 @@ class Engine:
             cur={**cur,'Recov':recovery.curve(nt.time,s.t,local['recov_w'],local['recov_wl'])}
             data=hand.extract(nt,30.)
             rates=hand.field(data,s.t,float(local['w_jm']))
-            unit=hand_cost.price(hand_cost.state(rates),s.x[0],p)
-            if reference is None:reference=s;extra=role_price*role.field(notes,p,s.t)
-            sources.append((s,cur,unit))
-        release=.5*(sources[0][1]['Rbar']+sources[1][1]['Rbar'])
+            state=hand_cost.state(rates)
+            unit=hand_cost.price(state,s.x[0],p)
+            sources.append((nt,s,cur,state,unit))
+        reference=sources[0][1]
+        extra=role_price*role.field(notes,p,reference.t)
+        release=.5*(sources[0][2]['Rbar']+sources[1][2]['Rbar'])
+        return sources,reference,extra,release
+    def predict(self,notes,p,role_price,*,with_zero=False):
+        sources,reference,extra,release=self._components(notes,p,role_price)
         def combine(s,cur,unit):return model.combine(s,{**cur,'Rbar':release,'Jm_context':cur['Jm'],'Jm':cur['Jm']+unit},p)
-        parts=[combine(s,cur,unit+extra) for s,cur,unit in sources]
+        parts=[combine(s,cur,unit+extra) for _,s,cur,_,unit in sources]
         field=.5*(parts[0]+parts[1]);raw=float(model.postprocess(reference,model.aggregate(reference,field,p,hold_w=True),p)[0])
         result=dict(raw_score=raw,query=reference.t,field=field,struct=reference)
         if with_zero:
-            zero=[combine(s,cur,unit) for s,cur,unit in sources];zero=.5*(zero[0]+zero[1])
+            zero=[combine(s,cur,unit) for _,s,cur,_,unit in sources];zero=.5*(zero[0]+zero[1])
             result.update(zero_field=zero,raw_zero=float(model.postprocess(reference,model.aggregate(reference,zero,p,hold_w=True),p)[0]))
         return result
 @lru_cache(maxsize=1)

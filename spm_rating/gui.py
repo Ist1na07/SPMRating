@@ -1,12 +1,15 @@
 """Small desktop scorer using the public model API."""
 import csv,queue,threading,tkinter as tk
 from tkinter import ttk,filedialog,messagebox
-from . import load_model,rate_file
+from . import __version__,load_model,rate_file
+
+DEFAULT_MODEL_LABEL='Detail / 完整'
+MODEL_CHOICES={DEFAULT_MODEL_LABEL:'detail','Compact / 精简':'compact','4K Dan / 4K 段位':'detail-4k'}
 
 def main():
-    window=tk.Tk();window.title('SPM Rating v1.2.0-rc3');window.geometry('900x560')
+    window=tk.Tk();window.title(f'SPM Rating v{__version__}');window.geometry('900x560')
     top=ttk.Frame(window,padding=12);top.pack(fill='x')
-    ttk.Label(top,text='Model / 模型').pack(side='left');model=tk.StringVar(value='Detailed / 完整');ttk.Combobox(top,textvariable=model,values=['Detailed / 完整','Compact / 精简'],state='readonly',width=12).pack(side='left',padx=8)
+    ttk.Label(top,text='Model / 模型').pack(side='left');model=tk.StringVar(value=DEFAULT_MODEL_LABEL);ttk.Combobox(top,textvariable=model,values=tuple(MODEL_CHOICES),state='readonly',width=18).pack(side='left',padx=8)
     ttk.Label(top,text='Rate / 倍率').pack(side='left');rate=tk.StringVar(value='1.0');ttk.Entry(top,textvariable=rate,width=8).pack(side='left',padx=8)
     status=tk.StringVar(value='Open .osu charts, then export scores to CSV. / 选择谱面后可导出评分。');ttk.Label(window,textvariable=status,padding=12).pack(fill='x')
     table=ttk.Treeview(window,columns=('path','score','message'),show='headings')
@@ -17,9 +20,9 @@ def main():
         if running[0]:return
         paths=filedialog.askopenfilenames(filetypes=[('osu! 谱面','*.osu')])
         if not paths:return
-        try:m=load_model({'Detailed / 完整':'detail','Compact / 精简':'compact'}[model.get()]);speed=float(rate.get());assert speed>0.
+        try:m=load_model(MODEL_CHOICES[model.get()]);speed=float(rate.get());assert speed>0.
         except Exception as e:messagebox.showerror('Cannot start / 无法开始',str(e));return
-        running[0]=True;stop.clear();status.set('Scoring; stop takes effect after the current pass. / 计算中，可停止。')
+        running[0]=True;stop.clear();status.set('Scoring; Stop cancels at the next scoring boundary. / 计算中，可停止。')
         def worker():
             try:
                 for path in paths:
